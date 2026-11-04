@@ -4,11 +4,12 @@
 
 - [ ] Opportunities social/ads: run the full A–C pass (`apptopics social-topics --grades ABC`, ~600 topics, ≈ $13 once,
       ~$5 a month if repeated)? Piloted on 5 topics 2026-11-03; mostly +1–2 points where videos have millions of views.
-- [ ] Weekly snapshots: click **Run weekly update** each week (Wednesday or later). First backtest 2026-11-30.
+- [ ] Tap **Run light update** when free (ideally daily) and **Run weekly update** each week (Wednesday or later).
+      Nothing runs on its own. Backtest early read 2026-11-30; young-app winners after ~90 light updates.
 
 ## Next
 
-- [ ] **Backtest** (2026-11-30, `apptopics backtest`): do A/B beat C–E on newcomer entry? Retune weights from evidence.
+- [ ] **Backtest** (2026-11-30 early read, 90-day winners later): do A/B beat C–E? Compare the fitted exponents with 0.45/0.35/0.20.
 - [ ] **Probe-app log**: model prediction before launch vs ASC after (RightMeal / SparkNote metadata tests; SparkNote
       estimate in `data/research/sparknote_metadata_estimate_2026-11-03.txt`, check against ASC in 4–6 weeks).
 - [ ] **Difficulty → expected rank**: strength-vs-difficulty tables; validate on our own launches.
@@ -29,6 +30,12 @@
 - DataForSEO Labs keyword ideas: one pilot ($0.48, 2026-11-02), code removed 2026-11-04.
 
 ## Done
+
+**2026-11-04 (later)** — calibration round. Honest hold-out test of the revenue curve (`calibrate-anchors --holdout`,
+knot fit now reproducible, logistic P(≥$5k) tried and kept report-only); backtest redesigned (parts, young-app winners,
+model version, fitted exponents); **Run light update** button (own-app pages, charts, band apps of the top 1,500; a daily
+schedule was tried and taken back to manual the same day); own-app rank history in the dashboard; Apple Analytics API
+checked: no search terms; Search Ads probe and paid estimates (AppMagic ~$150/mo, Sensor Tower thousands/yr) declined.
 
 **2026-11-04** — cleanup and review. Removed: DataForSEO Labs pilot, topic roll-up, refresh helpers, unused clients,
 the old `calibrate` fit and its dead weights, Reddit/X buzz factors and sources (ScrapeCreators replaced them), the
