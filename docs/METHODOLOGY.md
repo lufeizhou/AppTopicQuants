@@ -224,7 +224,7 @@ risks and next step. Every search found joins the universe, so the weekly run ke
 | `apptopics validate` | every change | 30 known real niches visible, 20 brands/vague words hidden, 8 hard markets low, ratings vs grossing ranks | all pass; Spearman 0.52 |
 | `apptopics calibrate-anchors --holdout` | when anchors grow | revenue curve vs 487 verified apps, out of sample | within 3× 56%, AUC 0.73, recall at $5k 13–16% |
 | `apptopics backtest` | 28 days after a run (early read), ~90 days for winners | do A/B searches produce more young apps reaching the $5k pace than C-E? fitted exponents vs 0.45/0.35/0.20 | early read **2026-11-30** |
-| Own-app rank history | daily (light run) | does a keyword with 3+ open spots really give your app a page-one rank? | collecting since 2026-11-04 |
+| Own-app rank history | each light update | does a keyword with 3+ open spots really give your app a page-one rank? | collecting since 2026-11-04 |
 | Probe apps | months | can *we* win a topic the model likes? | not started |
 | Own sales | ad hoc | SparkNote: invisible in US search → model predicts ~$0, ASC shows ~$50/mo | consistent, weak test |
 
@@ -291,11 +291,9 @@ and the raw-factor tab, but the dashboard ranks by opp_score.
 
 - `apptopics serve`: dashboard. **Run weekly update** (or `apptopics run-weekly`) once a week, Wednesday or
   later (Apple's popularity week is published by then), by hand.
-- The free **daily light run** (`apptopics collect light`, 03:30 via launchd, ~5 min) refreshes your own apps'
-  result pages, the grossing charts and the rating counts of the band apps of the top 1,500 searches, so rating
-  velocity, the backtest and your rank history get a daily series. A missed time runs at the next wake.
-  `scripts/install_launchd.sh` installs only this job; `install_launchd.sh light weekly` also schedules the paid
-  weekly run (normally started by hand).
+- **Run light update** (dashboard button, or `apptopics collect light`): free, ~15 minutes, by hand, ideally once a
+  day. Refreshes your own apps' result pages (rank history), the grossing charts and the rating counts of the band apps
+  of the top 1,500 searches, so rating velocity and the backtest get a series. Nothing is scheduled.
 - Every paid API has a monthly cap in `config/budget.toml`; a job that would exceed it is skipped with a
   warning.
 - After `llm cluster` (rebuilds topics), re-run `llm attach-hidden`; `llm merge-topics` merges duplicates
