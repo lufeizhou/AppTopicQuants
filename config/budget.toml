@@ -1,0 +1,25 @@
+# Monthly spend caps in USD per paid API, plus a total. Sized for the WEEKLY full run
+# (DataForSEO: 1,000 search pages + Trends 1,000 + volume 1,500 per week ≈ $22/mo; DeepSeek ≈ $2-4/mo). Edited from the dashboard (Budget panel)
+# or by hand. Caps are checked before each paid job using an estimate of that job's cost and the
+# month-to-date actual spend recorded in the `spend` table. When a job would exceed its cap it is
+# skipped, a warning is recorded (dashboard banner + macOS notification), and everything else runs.
+
+[caps]
+deepseek = 8.0
+dataforseo = 30.0
+scrapecreators = 5.0
+total = 45.0
+
+[cadence]
+trends_every_days = 7      # Google Trends is the one cost that scales with frequency
+volume_every_days = 7
+keywords_every_days = 7    # Apple updates the popularity list weekly
+
+[unit_prices]
+# Used only for pre-run estimates; actual spend comes from the APIs' own usage/cost fields.
+deepseek_in_per_m = 0.14
+deepseek_out_per_m = 0.28
+dataforseo_volume_task = 0.06        # up to 1,000 keywords
+dataforseo_trends_task = 0.011       # reference + 4 keywords, live
+scrapecreators_credit = 0.00188  # Reddit via ScrapeCreators, 1 credit per request
+dataforseo_search_serp = 0.0024      # App Store SERP, 100 items, priority queue

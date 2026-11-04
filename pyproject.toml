@@ -1,0 +1,63 @@
+[project]
+name = "apptopics"
+version = "0.1.0"
+description = "Quant-style ranking of fine-grained app topics: demand, momentum, monetization, competition, difficulty."
+requires-python = ">=3.11"
+dependencies = [
+  "duckdb>=1.0",
+  "httpx>=0.27",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "pydantic>=2",
+  "python-dotenv>=1",
+  "typer>=0.12",
+  "numpy>=1.26",
+  "openai>=1.30",
+  "play-store-scraper-ng>=0.1.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+apptopics = "apptopics.cli:app"
+
+# Third-party metric plugins can register here:
+# [project.entry-points."apptopics.metrics"]
+# my_metric = "my_package.metrics:MyMetric"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["apptopics*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 200
+target-version = "py311"
+exclude = [".venv", "data", "logs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "I", "RUF"]
+ignore = [
+  "E501",   # long lines are deliberate (tables, SQL, prompts)
+  "E731",   # small lambdas are fine
+  "E741",
+  "B008",   # typer defaults are function calls
+  "B023",   # closures in loops are all called within the same iteration
+  "B905",   # zip strict= adds noise
+  "E702",   # compact one-liners in prompts and tests
+  "UP031",  # %-formatting kept in long prompt strings with JSON braces
+  "RUF001", "RUF002", "RUF003",  # unicode in strings and comments is intended
+  "RUF012",
+  "SIM102", "SIM105", "SIM108", "SIM117",
+  "UP007", "UP045",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apptopics"]

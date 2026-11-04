@@ -1,0 +1,10 @@
+# Copy to config/own_apps.toml. Your own apps: shown as an overlay in the dashboard (ASO view + keyword details)
+# and used as revenue anchors. Title / subtitle / keywords should match App Store Connect exactly.
+
+[[app]]
+app_id = "1234567890"
+name = "My App"
+title = "My App: Habit Tracker"
+subtitle = "Daily routines and streaks"
+keywords = "habit,tracker,routine,streak,goals"
+sku_app_ids = ["1234567890"]   # ASC rows that belong to this app (app + its subscriptions)

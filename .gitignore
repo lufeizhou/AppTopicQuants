@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/*
+!data/.gitkeep
+logs/
+.pytest_cache/
+*.egg-info/
+.ruff_cache/
+config/own_apps.toml

@@ -1,0 +1,18 @@
+# Test list for `apptopics validate`. Edit freely: it is the definition of "the ranking looks right".
+#
+# good: real niches a small team could build. Pass = visible and scored (not hidden). Their rank is reported, not
+#       required: some classics are honestly low-paying at p5-p20 (metronome, white noise ~ $1k/mo).
+# junk: brands, vague words, navigational searches. Pass = hidden, or at least none in the top 100.
+# hard: legitimate but crowded markets. Pass = difficulty >= 75 (shown as hard on the map).
+
+good = ["habit tracker", "pdf scanner", "invoice maker", "budget app", "water tracker", "calorie counter",
+        "sleep tracker", "white noise", "step counter", "intermittent fasting", "baby tracker", "contraction timer",
+        "teleprompter", "metronome", "guitar tuner", "interval timer", "mileage tracker", "meal planner",
+        "mushroom identifier", "rock identifier", "bird identifier", "workout planner", "resume builder",
+        "background remover", "voice recorder", "flashcards", "moon phase", "tv remote", "screen mirroring", "photo vault"]
+
+junk = ["me@walmart", "ross store", "cai", "chai", "toca boca", "dia", "treat", "real", "wonder", "the real app",
+        "ff max", "apple pay", "2k app", "prize picks packs", "rips by triumph", "dollar tree", "nba league pass",
+        "v2ray", "d", "five star"]
+
+hard = ["photo editor", "calculator", "translator", "notes", "calendar", "ai chat", "video editor", "bible"]
