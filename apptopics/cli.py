@@ -268,13 +268,28 @@ def run_weekly(store: str = S):
 
 @collect.command("light")
 def c_light(top: int = 1500, store: str = S):
-    """Daily light run (free, ~5 min): your own apps' result pages (rank history), charts, fresh rating counts for the
-    band apps of the top-N keywords (rating velocity series)."""
+    """Light update (free, ~15 min, started by hand from the dashboard or here): your own apps' result pages (rank
+    history), charts, fresh rating counts for the band apps of the top-N keywords (rating velocity series)."""
+    import datetime as _dt
+    import json as _j
+
+    from .config import settings as _s
     from .pipeline.own import refresh_own_pages
     from .pipeline.weekly import run_light
-    n_own = refresh_own_pages(store)
-    with connect() as con:
-        typer.echo({"own_pages": n_own, **run_light(con, store, top)})
+    st = _s.db_path.parent / "cache" / "light_status.json"
+    st.parent.mkdir(parents=True, exist_ok=True)
+    prev = _j.loads(st.read_text()) if st.exists() else {}
+    started = _dt.datetime.now().isoformat(timespec="seconds")
+    st.write_text(_j.dumps({**prev, "state": "running", "started_at": started}))
+    try:
+        n_own = refresh_own_pages(store)
+        with connect() as con:
+            out = {"own_pages": n_own, **run_light(con, store, top)}
+        st.write_text(_j.dumps({"state": "done", "started_at": started, "last_light_run": _dt.datetime.now().isoformat(timespec="seconds"), "result": out}))
+        typer.echo(out)
+    except Exception as e:
+        st.write_text(_j.dumps({**prev, "state": "error", "started_at": started, "error": str(e)[:300]}))
+        raise
 
 
 @collect.command("keywords")

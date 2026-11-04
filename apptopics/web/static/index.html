@@ -165,6 +165,8 @@ tr.ksel{cursor:pointer}tr.ysel td{background:#F5F9FF}
  <nav class="tabs"><button data-v="opp" class="on">Opportunities</button><button data-v="res">Research</button><button data-v="bud">Budget &amp; data</button></nav>
  <span style="flex:1"></span>
  <span class="sub" id="asof"></span>
+ <span class="sub" id="ltstate"></span>
+ <button id="ltbtn" data-tip="Light update, free, ~15 min: your apps' result pages (rank history), Apple charts and fresh rating counts for the band apps of the top 1,500 searches. Tap it when you are free, ideally once a day; never runs on its own.">Run light update</button>
  <span class="sub" id="wkstate"></span>
  <button id="wkbtn" data-tip="Manual weekly full run: refreshes Apple popularity, charts, competitors, reviews and paid sources (within caps), then rescores. Never runs automatically.">Run weekly update</button>
 </header>
@@ -612,6 +614,13 @@ $("#wkbtn").onclick=async()=>{const r=await wkStatus();const tot=(r.plan||[]).fi
  dlg.style.display="block"};
 async function wkGo(force){const r=await(await fetch("/api/run/weekly",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({force})})).json();
  $("#wkdlg").style.display="none";if(!r.started&&r.warnings)alert(r.warnings.join("\n"));wkStatus()}
-wkStatus();
+async function ltStatus(){const r=await(await fetch("/api/run/light")).json();const st=r.status||{};
+ $("#ltstate").textContent=st.state==="running"?`light update running since ${(st.started_at||"").replace("T"," ")}`:st.last_light_run?`last light update ${st.last_light_run.replace("T"," ")}`:"no light update yet";
+ $("#ltbtn").disabled=st.state==="running";if(st.state==="running")setTimeout(ltStatus,30000);return r}
+$("#ltbtn").onclick=async()=>{const r=await ltStatus();if(r.status?.state==="running")return;
+ if(r.warnings.length&&!confirm(r.warnings.join("\n")+"\n\nRun anyway?"))return;
+ const x=await(await fetch("/api/run/light",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({force:true})})).json();
+ if(!x.started)alert((x.warnings||["Could not start."]).join("\n"));ltStatus()};
+wkStatus();ltStatus();
 loadOverview();load();loadBudget();loadRuns();
 </script></body></html>

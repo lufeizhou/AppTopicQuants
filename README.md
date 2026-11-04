@@ -42,9 +42,10 @@ cp .env.example .env            # fill the keys you have; missing sources are sk
   searches whose results page was never fetched are **No data**.
 - **Budget & data**: monthly caps, next-run cost estimate, spend, recent jobs.
 - **Run weekly update** (top right): manual only. Warns if the last run is < 7 days old or Apple's new week is
-  not published yet (before Wednesday), and shows the paid cost first. The free **daily light run** (03:30, launchd,
-  `scripts/install_launchd.sh`) refreshes your own apps' result pages, the charts and the rating counts of band apps,
-  so rating velocity, the backtest and your rank history have a daily series.
+  not published yet (before Wednesday), and shows the paid cost first.
+- **Run light update** (next to it): free, ~15 min, tap it when you are free, ideally once a day. Refreshes your own
+  apps' result pages, the charts and the rating counts of band apps, so rating velocity, the backtest and your rank
+  history get a series. Nothing runs on its own.
 
 **Command line** (same functions):
 
@@ -58,7 +59,7 @@ apptopics top -n 40 [--entity topic] [--all]
 apptopics validate                   # ranking sanity checks (config/golden.toml + grossing charts)
 apptopics backtest                   # did grades predict outcomes? early read after 28 days, young-app winners after 90
 apptopics calibrate-anchors [--holdout] [--apply]   # verified-revenue anchors: error report, honest hold-out test, refit the curve
-apptopics collect light              # the daily free run (own-app pages, charts, rating counts); installed by scripts/install_launchd.sh
+apptopics collect light              # light update (own-app pages, charts, rating counts); same as the dashboard button
 apptopics collect longtail | longtail-finish   # discover long-tail searches, then popularity + competitors + rescore
 apptopics llm labels | buildability | pain-top | cluster | merge-topics | attach-hidden   # pain-top is manual only (not in the weekly run)
 apptopics dfs volume | trends | play | play-reviews   # DataForSEO: Google volume+CPC, Trends, Play rankings, Play reviews → pain points

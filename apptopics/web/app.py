@@ -424,6 +424,36 @@ def _weekly_warnings() -> list[str]:
     return warn
 
 
+def _light_status() -> dict:
+    p = settings.db_path.parent / "cache" / "light_status.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+@app.get("/api/run/light")
+def light_get():
+    st = _light_status()
+    warn = []
+    if st.get("state") == "running":
+        warn.append(f"A light update is already running (started {st.get('started_at')}).")
+    if st.get("last_light_run"):
+        hours = (dt.datetime.now() - dt.datetime.fromisoformat(st["last_light_run"])).total_seconds() / 3600
+        if hours < 20:
+            warn.append(f"The last light update was {hours:.0f} hours ago; rating counts barely move within a day.")
+    return {"status": st, "warnings": warn}
+
+
+@app.post("/api/run/light")
+def light_start(payload: dict = Body(default={})):
+    r = light_get()
+    if r["status"].get("state") == "running":
+        return JSONResponse({"started": False, "warnings": r["warnings"]}, status_code=409)
+    if r["warnings"] and not payload.get("force"):
+        return {"started": False, "warnings": r["warnings"]}
+    log_path = settings.db_path.parent.parent / "logs" / f"light_{dt.datetime.now():%Y%m%d_%H%M}.log"
+    _spawn(["collect", "light"], log_path)
+    return {"started": True, "log": str(log_path)}
+
+
 @app.get("/api/run/weekly")
 def weekly_get():
     from ..pipeline.weekly import run_plan
