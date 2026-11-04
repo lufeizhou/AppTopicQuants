@@ -188,33 +188,16 @@ def keyword_detail(keyword: str, store: str = settings.store, entity: str = "key
 
 @app.get("/api/own")
 def own_apps(store: str = settings.store):
-    """Your own apps (config/own_apps.toml): metadata terms with their ASO numbers, where the app ranks, recent sales."""
-    import tomllib
-    p = Path(settings.project_root if hasattr(settings, "project_root") else Path(__file__).resolve().parents[2]) / "config" / "own_apps.toml"
-    if not p.exists():
+    """Your own apps (config/own_apps.toml): metadata terms with their ASO numbers, rank history per term, recent sales."""
+    from ..pipeline.own import load_own_apps, own_terms, rank_history
+    cfg_apps = load_own_apps()
+    if not cfg_apps:
         return []
-    cfg = tomllib.load(p.open("rb"))
     con = _con()
     try:
         out = []
-        for a in cfg.get("app", []):
-            import re
-            STOP = {"a", "an", "the", "and", "or", "of", "for", "to", "in", "on", "with", "your", "you", "my", "&", "+", "by", "is", "it", "at", "new"}
-            name_words = set(re.findall(r"[a-z0-9]+", (a.get("name") or "").lower()))
-            terms, seen = [], set()
-            def add(t, field):
-                t = t.strip().lower()
-                if t and t not in seen and t not in STOP:
-                    seen.add(t)
-                    terms.append({"term": t, "field": field})
-            for field in ("title", "subtitle"):   # Apple indexes words; show single words and 2-word phrases (app name excluded)
-                words = [w for w in re.findall(r"[a-z0-9]+", (a.get(field) or "").lower()) if w not in STOP and w not in name_words]
-                for w in words:
-                    add(w, field)
-                for i in range(len(words) - 1):
-                    add(f"{words[i]} {words[i + 1]}", field)
-            for t in (a.get("keywords") or "").split(","):
-                add(t, "keywords")
+        for a in cfg_apps:
+            terms = own_terms(a)
             kws = [t["term"] for t in terms]
             found = {}
             if kws:
@@ -224,16 +207,22 @@ def own_apps(store: str = settings.store):
                     SELECT entity_id, map_from_entries(list((metric, value))), map_from_entries(list((metric, meta))) FROM f GROUP BY entity_id""", [kws]).fetchall():
                     vals, metas = dict(vals), dict(metas)
                     found[k] = {"keyword": k, **vals, "meta": {m: (json.loads(v) if v else None) for m, v in metas.items()}}
-            ranks = {k: r for k, r in con.execute("""SELECT keyword, min(rank) FROM search_results WHERE store=? AND app_id=?
-                       AND snapshot_date=(SELECT max(snapshot_date) FROM search_results) GROUP BY keyword""", [store, a["app_id"]]).fetchall()}
+            hist = rank_history(con, store, a["app_id"], kws)
+            ranks = {k: h[-1][1] for k, h in hist.items() if h and h[-1][1] is not None}
             ids = a.get("sku_app_ids") or [a["app_id"]]
             usd, dl = con.execute(f"""SELECT coalesce(sum(proceeds_usd),0), coalesce(sum(CASE WHEN kind='download' THEN units ELSE 0 END),0)
                                       FROM own_sales WHERE app_id IN ({','.join('?' * len(ids))}) AND report_date >= current_date - 90""", ids).fetchone()
             for t in terms:
                 t["row"] = found.get(t["term"])
                 t["rank"] = ranks.get(t["term"])
+                h = hist.get(t["term"]) or []
+                t["history"] = h
+                t["rank_first"] = next((r for _, r in h if r is not None), None)
+                t["best_rank"] = min((r for _, r in h if r is not None), default=None)
+                ws = (found.get(t["term"]) or {}).get("weak_spots")
+                t["open_spots"] = ws
             out.append({"name": a["name"], "app_id": a["app_id"], "title": a.get("title"), "subtitle": a.get("subtitle"), "keywords": a.get("keywords"),
-                        "terms": terms, "ranks": ranks, "monthly_usd": round(usd / 3, 2), "monthly_downloads": int(dl / 3)})
+                        "terms": terms, "ranks": ranks, "history": hist, "monthly_usd": round(usd / 3, 2), "monthly_downloads": int(dl / 3)})
         return out
     finally:
         con.close()

@@ -392,16 +392,21 @@ async function loadOwn(){try{OWN=await(await fetch("/api/own")).json()}catch(e){
  $("#ownchips").querySelectorAll(".chip").forEach(c=>c.onclick=()=>{ownSel=ownSel===c.dataset.a?null:c.dataset.a;$("#ownchips").querySelectorAll(".chip").forEach(x=>x.classList.toggle("on",x.dataset.a===ownSel));ownSel?showOwn():load()})}
 function ownInfo(kw){const out=[];for(const a of OWN){const f=(a.terms||[]).filter(t=>t.term===kw).map(t=>t.field);const rk=a.ranks?.[kw];if(f.length||rk)out.push({app:a.name,fields:f,rank:rk})}return out}
 function ownTag(kw){const o=ownInfo(kw);return o.length?o.map(x=>`<span class="own" data-tip="${esc(x.app)}: ${x.fields.length?"in "+x.fields.join(" + "):""}${x.rank?` · ranks #${x.rank}`:x.fields.length?" · not in top 200":""}">${esc(x.app)}${x.rank?" #"+x.rank:""}</span>`).join(""):""}
+function spark(h){const pts=h.filter(x=>x[1]!=null);if(pts.length<2)return"";const w=90,hh=18,n=h.length,mx=Math.max(...pts.map(x=>x[1]),10);
+ const d=h.map((x,i)=>x[1]==null?null:`${(i/(n-1)*w).toFixed(1)},${(hh-2-(1-Math.min(x[1],mx)/mx)*(hh-4)).toFixed(1)}`).filter(Boolean).join(" ");
+ return`<svg width="${w}" height="${hh}" style="vertical-align:middle;margin-left:6px"><polyline points="${d}" fill="none" stroke="var(--blue-d)" stroke-width="1.5"/></svg>`}
 function ownLine(kw){const o=ownInfo(kw);if(!o.length&&!OWN.length)return"";
- const parts=OWN.map(a=>{const x=o.find(z=>z.app===a.name);const rk=a.ranks?.[kw];
-  return`<b>${esc(a.name)}</b>: ${rk?`ranks #${rk}`:"not in top 200"}${x&&x.fields.length?` · term is in your ${x.fields.join(" + ")}`:""}`});
- return`<div class="rec"><b>Your apps</b>${info("Where your own apps rank in Apple's results for this search (top 200), and whether the term is already in your title, subtitle or keyword field (config/own_apps.toml).")}<div class="why">${parts.join("<br>")}</div></div>`}
+ const parts=OWN.map(a=>{const x=o.find(z=>z.app===a.name);const rk=a.ranks?.[kw];const h=a.history?.[kw]||[];const first=h.find(z=>z[1]!=null);
+  const trend=h.length>1?` <span class="muted">(${h.length} days: ${first?"#"+first[1]:"–"} → ${rk?"#"+rk:"–"})</span>${spark(h)}`:"";
+  return`<b>${esc(a.name)}</b>: ${rk?`ranks #${rk}`:"not in top 200"}${trend}${x&&x.fields.length?` · term is in your ${x.fields.join(" + ")}`:""}`});
+ return`<div class="rec"><b>Your apps</b>${info("Where your own apps rank in Apple's results for this search (top 200) and how that moved since we started fetching the page daily, and whether the term is already in your title, subtitle or keyword field (config/own_apps.toml). Compare with the open spots: the model says a keyword with 3+ open spots is reachable.")}<div class="why">${parts.join("<br>")}</div></div>`}
 function showOwn(){const a=OWN.find(x=>x.name===ownSel);if(!a)return;
  rows=a.terms.map(t=>({...(t.row||{keyword:t.term,meta:{}}),keyword:t.term,label:t.term,_field:t.field,_rank:t.rank}));
  if(mode!=="aso"){mode="aso";document.querySelectorAll("#viewseg button").forEach(x=>x.classList.toggle("on",x.dataset.x==="aso"))}
  sort={k:"aso_score",d:-1};render();
  const miss=rows.filter(r=>r.aso_score==null).map(r=>r.keyword);
- $("#count").textContent=`${a.name}: ${rows.length} metadata terms`+(miss.length?` · not tracked (no popularity data): ${miss.join(", ")}`:"")}
+ const moved=a.terms.filter(t=>t.rank_first!=null&&t.rank!=null&&t.rank!==t.rank_first);const reach=a.terms.filter(t=>(t.open_spots||0)>=3);
+ $("#count").textContent=`${a.name}: ${rows.length} metadata terms · ranking for ${a.terms.filter(t=>t.rank).length}, ${reach.length} with 3+ open spots`+(moved.length?` · moved: ${moved.slice(0,6).map(t=>`${t.term} #${t.rank_first}→#${t.rank}`).join(", ")}`:"")+(miss.length?` · not tracked: ${miss.join(", ")}`:"")}
 
 
 const ACOL={"Build now":"#2563EB","Watch":"#FBBF24"};

@@ -133,9 +133,10 @@ def run_full(con, store: str = settings.store, top: int = 300, play_top: int = 1
     return final
 
 
-def run_light(con, store: str = settings.store, top: int = 300) -> dict:
-    """Daily, free, ~3 minutes: Apple charts (grossing ranks move daily) and fresh rating counts for
-    the band apps of the top keywords, so rating velocity becomes a true day-over-day series."""
+def run_light(con, store: str = settings.store, top: int = 1500) -> dict:
+    """Daily, free, a few minutes: Apple charts (grossing ranks move daily) and fresh rating counts for the band apps
+    of the top keywords, so rating velocity becomes a true day-over-day series (the `observed` estimator and the
+    backtest's young-app outcomes both need it). Own-app pages are refreshed by the CLI before this (lock-free)."""
     n_charts = c.collect_charts(con, store)
     ids = c.band_app_ids(con, store, c.ranked(con, top))
     n_apps = c.collect_apps_for(con, ids, store)

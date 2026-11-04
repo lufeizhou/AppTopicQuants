@@ -78,6 +78,13 @@ CREATE TABLE IF NOT EXISTS predictions (
   horizon_days INTEGER, made_at DATE, realized DOUBLE, scored_at DATE,
   PRIMARY KEY (cycle_id, entity_type, entity_id, metric));
 
+CREATE TABLE IF NOT EXISTS backtest_apps (
+  cycle_id TEXT, keyword TEXT, app_id TEXT, name TEXT, rating_count INTEGER, est_then DOUBLE, release_date TIMESTAMP, made_at DATE,
+  PRIMARY KEY (cycle_id, keyword, app_id));
+
+CREATE TABLE IF NOT EXISTS backtest_cycles (
+  cycle_id TEXT PRIMARY KEY, made_at DATE, model_version TEXT, n_keywords INTEGER, n_young_apps INTEGER);
+
 CREATE TABLE IF NOT EXISTS own_sales (
   report_date DATE, app_id TEXT, parent_id TEXT, sku TEXT, title TEXT, product_type TEXT, kind TEXT, units INTEGER,
   proceeds_unit DOUBLE, currency TEXT, proceeds_usd DOUBLE, country TEXT, subscription TEXT, period TEXT, row_no INTEGER,

@@ -6,7 +6,7 @@
     <string>/Users/lufei/Documents/AppTopicsQuants/.venv/bin/apptopics</string><string>collect</string><string>light</string>
   </array>
   <key>WorkingDirectory</key><string>/Users/lufei/Documents/AppTopicsQuants</string>
-  <!-- daily 03:30 local, free: Apple charts + rating counts of band apps (rating velocity series). -->
+  <!-- daily 03:30 local, free: own-app result pages (rank history), Apple charts, rating counts of band apps (rating velocity). A missed time runs at the next wake. -->
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
   <key>StandardOutPath</key><string>/Users/lufei/Documents/AppTopicsQuants/logs/light.log</string>
   <key>StandardErrorPath</key><string>/Users/lufei/Documents/AppTopicsQuants/logs/light.err</string>

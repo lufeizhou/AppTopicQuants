@@ -127,3 +127,172 @@ def import_anchors(con, path: Path, source: str | None = None) -> int:
                          "monthly_revenue_usd": float(r["monthly_revenue_usd"]), "monthly_downloads": int(float(r["monthly_downloads"])) if r.get("monthly_downloads") else None,
                          "observed_at": dt.date.fromisoformat(r["observed_at"]) if r.get("observed_at") else today(), "note": r.get("note")})
     return upsert(con, "calibration_anchors", rows)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Honest calibration: reproducible knot fit, a direct P(>= target) model, and hold-out evaluation of both.
+# ---------------------------------------------------------------------------------------------------------------------
+P5K_FEATURES = ("log_rpm", "log_ratings", "log_months", "paid")
+
+
+def anchor_rows(con, store: str = "us") -> list[dict]:
+    """Verified-revenue anchors joined with their latest App Store profile (no network). One row per app."""
+    rows = con.execute("""
+        WITH a AS (SELECT app_id, source, monthly_revenue_usd, note FROM calibration_anchors WHERE monthly_revenue_usd > 0
+                   QUALIFY row_number() OVER (PARTITION BY app_id ORDER BY observed_at DESC)=1),
+             p AS (SELECT app_id, rating_count, rating_count_current, release_date, current_version_date, price, primary_genre_id, snapshot_date
+                   FROM apps WHERE store=? QUALIFY row_number() OVER (PARTITION BY app_id ORDER BY snapshot_date DESC)=1)
+        SELECT a.app_id, a.source, a.monthly_revenue_usd, a.note, p.rating_count, p.rating_count_current, p.release_date, p.current_version_date,
+               p.price, p.primary_genre_id, p.snapshot_date FROM a JOIN p USING (app_id)""", [store]).fetchall()
+    out = []
+    for app_id, src, usd, name, rc, rcc, rel, ver, price, genre, d in rows:
+        if not rc or not rel:
+            continue
+        months = max(1.0, (dt.datetime.combine(d, dt.time()) - rel).days / 30.4)
+        out.append({"app_id": app_id, "source": src, "name": name, "usd": float(usd), "ratings": int(rc), "rcc": rcc, "months": months,
+                    "rpm": rc / months, "price": price or 0.0, "genre": genre, "release_date": rel, "version_date": ver, "asof": d})
+    return out
+
+
+def fit_knots(rows: list[dict], grid=(0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256), window: float = 0.4, min_n: int = 30) -> tuple[list, list]:
+    """Running median of monthly revenue around each ratings-per-month knot (log window +-`window` decades),
+    kept only where >= min_n anchors fall in the window, made monotone. This is how config/weights.toml was built."""
+    xs, ys = [], []
+    for k in grid:
+        sub = [r["usd"] for r in rows if abs(math.log10(r["rpm"]) - math.log10(k)) <= window]
+        if len(sub) >= min_n:
+            xs.append(k); ys.append(statistics.median(sub))
+    for i in range(1, len(ys)):
+        ys[i] = max(ys[i], ys[i - 1])
+    return xs, [round(y) for y in ys]
+
+
+def _feat(r: dict) -> list[float]:
+    return [1.0, math.log10(r["rpm"] + 0.01), math.log10(r["ratings"] + 1), math.log10(r["months"]), 1.0 if (r["price"] or 0) > 0 else 0.0]
+
+
+def fit_logistic(rows: list[dict], target: float, l2: float = 1.0, iters: int = 50) -> list[float]:
+    """Regularised logistic regression P(usd >= target | features) by Newton's method (no sklearn needed)."""
+    X = np.array([_feat(r) for r in rows]); y = np.array([1.0 if r["usd"] >= target else 0.0 for r in rows])
+    w = np.zeros(X.shape[1]); reg = l2 * np.eye(X.shape[1]); reg[0, 0] = 0.0
+    for _ in range(iters):
+        p = 1 / (1 + np.exp(-X @ w))
+        g = X.T @ (p - y) + reg @ w
+        H = (X * (p * (1 - p))[:, None]).T @ X + reg
+        step = np.linalg.solve(H, g)
+        w -= step
+        if np.max(np.abs(step)) < 1e-8:
+            break
+    return [round(float(v), 4) for v in w]
+
+
+def p_logistic(coef: list[float], r: dict) -> float:
+    z = sum(c * x for c, x in zip(coef, _feat(r)))
+    return 1 / (1 + math.exp(-max(-30.0, min(30.0, z))))
+
+
+def _auc(p: list[float], y: list[int]) -> float | None:
+    pos = [a for a, b in zip(p, y) if b]; neg = [a for a, b in zip(p, y) if not b]
+    if not pos or not neg:
+        return None
+    wins = sum((a > b) + 0.5 * (a == b) for a in pos for b in neg)
+    return round(wins / (len(pos) * len(neg)), 3)
+
+
+def _hit_table(p: list[float], y: list[int], cut: float = 0.5) -> dict:
+    tp = sum(1 for a, b in zip(p, y) if a >= cut and b); fp = sum(1 for a, b in zip(p, y) if a >= cut and not b)
+    fn = sum(1 for a, b in zip(p, y) if a < cut and b)
+    return {"flagged": tp + fp, "hits": tp, "recall": round(tp / max(1, tp + fn), 2), "precision": round(tp / max(1, tp + fp), 2)}
+
+
+def _buckets(p: list[float], y: list[int]) -> list[dict]:
+    out = []
+    for lo, hi in ((0, 0.1), (0.1, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1.01)):
+        sub = [(a, b) for a, b in zip(p, y) if lo <= a < hi]
+        if sub:
+            out.append({"predicted": f"{lo:.0%}-{min(hi, 1):.0%}", "n": len(sub), "mean_p": round(sum(a for a, _ in sub) / len(sub), 2),
+                        "actual": round(sum(b for _, b in sub) / len(sub), 2)})
+    return out
+
+
+def evaluate(rows: list[dict], knots: tuple[list, list], sigma: float, coef: list[float] | None, target: float) -> dict:
+    """Curve (point estimate + lognormal P) and logistic P on the same rows."""
+    from ..metrics.sector import p_above, rpm_to_usd
+    cfg = {"rpm_knots": knots[0], "usd_knots": knots[1], "est_sigma_log10": sigma}
+    est = [rpm_to_usd(cfg, r["rpm"]) for r in rows]; real = [r["usd"] for r in rows]; y = [1 if r["usd"] >= target else 0 for r in rows]
+    p_curve = [p_above(cfg, e, target) for e in est]
+    out = {"n": len(rows), "positives": sum(y), "curve": {**_err(est, real), "point_at_target": _hit_table([1.0 if e >= target else 0.0 for e in est], y),
+                                                           "p_at_50": _hit_table(p_curve, y), "auc": _auc(p_curve, y),
+                                                           "brier": round(float(np.mean([(a - b) ** 2 for a, b in zip(p_curve, y)])), 3),
+                                                           "calibration": _buckets(p_curve, y)}}
+    if coef:
+        p = [p_logistic(coef, r) for r in rows]
+        out["logistic"] = {"p_at_50": _hit_table(p, y), "p_at_35": _hit_table(p, y, 0.35), "auc": _auc(p, y),
+                           "brier": round(float(np.mean([(a - b) ** 2 for a, b in zip(p, y)])), 3), "calibration": _buckets(p, y)}
+    return out
+
+
+def holdout(rows: list[dict], target: float, splits: int = 20, test_share: float = 1 / 3, seed: int = 7) -> dict:
+    """Refit knots, sigma and the logistic model on 2/3 of the anchors, score the other 1/3; averaged over random splits."""
+    rng = np.random.default_rng(seed)
+    acc: dict[str, list[float]] = {}
+    for _ in range(splits):
+        idx = rng.permutation(len(rows)); k = int(len(rows) * test_share)
+        test, train = [rows[i] for i in idx[:k]], [rows[i] for i in idx[k:]]
+        knots = fit_knots(train)
+        if len(knots[0]) < 3:
+            continue
+        from ..metrics.sector import rpm_to_usd
+        cfgk = {"rpm_knots": knots[0], "usd_knots": knots[1]}
+        sigma = float(np.std([math.log10(max(rpm_to_usd(cfgk, r["rpm"]), 1)) - math.log10(r["usd"]) for r in train]))
+        ev = evaluate(test, knots, sigma, fit_logistic(train, target), target)
+        for name, m in (("curve_point", ev["curve"]["point_at_target"]), ("curve_p50", ev["curve"]["p_at_50"]),
+                        ("logistic_p50", ev["logistic"]["p_at_50"]), ("logistic_p35", ev["logistic"]["p_at_35"])):
+            for kk in ("recall", "precision"):
+                acc.setdefault(f"{name}.{kk}", []).append(m[kk])
+        acc.setdefault("curve.within_3x", []).append(ev["curve"]["within_3x"])
+        acc.setdefault("curve.median_abs_log10", []).append(ev["curve"]["median_abs_log10"])
+        for name in ("curve", "logistic"):
+            if ev[name].get("auc") is not None:
+                acc.setdefault(f"{name}.auc", []).append(ev[name]["auc"])
+            acc.setdefault(f"{name}.brier", []).append(ev[name]["brier"])
+    return {k: round(float(np.mean(v)), 3) for k, v in sorted(acc.items())} | {"splits": splits, "test_share": round(test_share, 2)}
+
+
+def calibrate(con, store: str = "us", apply: bool = False) -> dict:
+    """The honest report: in-sample fit of the curve and of a direct logistic P(>= target), hold-out scores of both,
+    and (with apply) the refitted curve written to weights.toml. The logistic model is reported, not used: on hold-out it
+    ranks no better than the curve (AUC 0.74 vs 0.73 on 2026-11-04) and its probabilities are flatter."""
+    from ..metrics.sector import rpm_to_usd
+    target = float(settings.weights().get("target", {}).get("monthly_usd", 5000))
+    rows = anchor_rows(con, store)
+    if len(rows) < 60:
+        return {"n": len(rows), "error": "too few anchors with a store profile (run calibrate-anchors first)"}
+    knots = fit_knots(rows)
+    cfgk = {"rpm_knots": knots[0], "usd_knots": knots[1]}
+    sigma = round(float(np.std([math.log10(max(rpm_to_usd(cfgk, r["rpm"]), 1)) - math.log10(r["usd"]) for r in rows])), 3)
+    coef = fit_logistic(rows, target)
+    cur = settings.weights().get("monetization", {})
+    res = {"anchors": len(rows), "positives": sum(1 for r in rows if r["usd"] >= target), "target": target,
+           "current": {"knots": [cur.get("rpm_knots"), cur.get("usd_knots")], "sigma": cur.get("est_sigma_log10"),
+                       "in_sample": evaluate(rows, (cur.get("rpm_knots") or knots[0], cur.get("usd_knots") or knots[1]), float(cur.get("est_sigma_log10", 0.77)), None, target)},
+           "refit": {"knots": knots, "sigma": sigma, "p5k_coef": dict(zip(("intercept", *P5K_FEATURES), coef)),
+                     "in_sample": evaluate(rows, knots, sigma, coef, target)},
+           "holdout": holdout(rows, target)}
+    if apply:
+        res["applied"] = apply_calibration(knots, sigma)
+    return res
+
+
+def apply_calibration(knots: tuple[list, list], sigma: float, path: Path | None = None) -> list[str]:
+    """Write the refitted curve into config/weights.toml [monetization]; returns the lines written."""
+    p = path or settings.weights_path
+    text = p.read_text(); changed = []
+    for key, val in (("rpm_knots", knots[0]), ("usd_knots", knots[1]), ("est_sigma_log10", sigma)):
+        new = f"{key} = {json.dumps(val)}"
+        text, n = re.subn(rf"^{key} = .*$", new, text, flags=re.M)
+        if n:
+            changed.append(new)
+    text, n = re.subn(r"^# Calibrated \d{4}-\d{2}-\d{2} on \d+ ", f"# Calibrated {today()} on {{n}} ", text, flags=re.M)
+    p.write_text(text)
+    return changed

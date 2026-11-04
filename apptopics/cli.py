@@ -196,16 +196,17 @@ def backtest_cmd(horizon: int = 28):
 
 
 @app.command("calibrate-anchors")
-def calibrate_anchors(refresh: bool = False):
+def calibrate_anchors(refresh: bool = False, holdout: bool = typer.Option(False, "--holdout", help="honest test: refit on 2/3 of the anchors, score the other 1/3"),
+                      apply: bool = typer.Option(False, "--apply", help="write the refitted curve into config/weights.toml")):
     """Fit the revenue estimator on verified-revenue apps (TrustMRR + MobileMRR caches) and print the error report."""
     import json as _j
 
-    from .pipeline.anchor_fit import fit
+    from .pipeline.anchor_fit import calibrate, fit
     from .sources.revenue_dirs import trustmrr_mobile
     if refresh:
         trustmrr_mobile(refresh=True)
     with connect() as con:
-        r = fit(con)
+        r = calibrate(con, apply=apply) if (holdout or apply) else fit(con)
     typer.echo(_j.dumps(r, indent=1, default=str))
 
 
@@ -266,11 +267,14 @@ def run_weekly(store: str = S):
 
 
 @collect.command("light")
-def c_light(top: int = 300, store: str = S):
-    """Daily light run (free, ~3 min): charts + fresh rating counts for band apps of the top-N."""
+def c_light(top: int = 1500, store: str = S):
+    """Daily light run (free, ~5 min): your own apps' result pages (rank history), charts, fresh rating counts for the
+    band apps of the top-N keywords (rating velocity series)."""
+    from .pipeline.own import refresh_own_pages
     from .pipeline.weekly import run_light
+    n_own = refresh_own_pages(store)
     with connect() as con:
-        typer.echo(run_light(con, store, top))
+        typer.echo({"own_pages": n_own, **run_light(con, store, top)})
 
 
 @collect.command("keywords")
