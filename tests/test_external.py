@@ -62,11 +62,12 @@ def test_topic_index_from_members(con):
     assert m["n_hidden"] == 1 and m["hidden_members"][0]["kind"] == "games" and not m["hidden"]
     assert con.execute("SELECT count(*) FROM factor_values WHERE entity_type='topic' AND entity_id='interval-timers' AND metric='composite'").fetchone()[0] == 0
     hm = json.loads(con.execute("SELECT meta FROM factor_values WHERE entity_type='topic' AND entity_id='tiktok' AND metric='opp_score'").fetchone()[0])
-    assert hm["hidden"] and hm["action"] == "Avoid" and hm["best"] == "tiktok" and hm["hidden_kinds"] == "brand 2"
+    assert hm["hidden"] and hm["action"] == "No" and hm["grade"] == "C" and hm["best"] == "tiktok" and hm["hidden_kinds"] == "brand 2"
     cm = json.loads(con.execute("SELECT meta FROM factor_values WHERE entity_type='topic' AND entity_id='tiktok' AND metric='composite'").fetchone()[0])
     assert cm["excluded"] and "brand" in cm["excluded_reason"]
     assert 0.9 < m["traffic_adj"] < 1.0                                  # ~74 searches/day -> small penalty
-    assert abs(v - (0.75 * 52 + 0.25 * 41 + 2 * math.log2(3)) * m["traffic_adj"]) < 0.1
+    assert abs(v - (0.75 * 52 + 0.25 * 41 + 2 * math.log2(2)) * m["traffic_adj"]) < 0.1   # bonus counts A/B members only
+    assert m["grade"] == "A" and m["action"] == "Build now"             # topic grade = best member's grade
     assert m["action"] == "Build now"
 
 

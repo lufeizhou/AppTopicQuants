@@ -51,13 +51,14 @@ def factor_matrix(con, store: str, snapshot_date: dt.date, entity_type: str = "k
     # A metric computed in this run (has rows dated snapshot_date) uses ONLY this run's values: an entity it no
     # longer covers must not inherit a stale value from an older model version. Metrics not recomputed in this
     # run (LLM judgments, slow external pulls) fall back to their latest value.
+    from .index import JUDGED  # judged a few keywords at a time: always keep each one's latest
     rows = con.execute("""
         WITH fresh AS (SELECT DISTINCT metric FROM factor_values WHERE entity_type=? AND snapshot_date=?)
         SELECT entity_id, metric, value FROM factor_values
         WHERE entity_type=? AND snapshot_date<=? AND metric NOT IN ('composite','opp_score','aso_score')
-          AND (snapshot_date=? OR metric NOT IN (SELECT metric FROM fresh))
+          AND (snapshot_date=? OR metric NOT IN (SELECT metric FROM fresh) OR metric IN (SELECT unnest(?)))
         QUALIFY row_number() OVER (PARTITION BY entity_id, metric ORDER BY snapshot_date DESC)=1""",
-        [entity_type, snapshot_date, entity_type, snapshot_date, snapshot_date]).fetchall()
+        [entity_type, snapshot_date, entity_type, snapshot_date, snapshot_date, list(JUDGED)]).fetchall()
     out: dict[str, dict[str, float]] = {}
     for e, m, v in rows:
         out.setdefault(e, {})[m] = v
@@ -96,11 +97,12 @@ def composite(con, store: str = settings.store, snapshot_date: dt.date | None = 
         cv = sorted(f["concentration"] for f in mat.values() if f.get("concentration") is not None)
         max_conc = round(cv[int(conc_pct * (len(cv) - 1))], 3) if cv else None
     labels: dict[str, str] = {}
+    spec: dict[str, int | None] = {}
     if entity_type == "keyword" and con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name='keyword_labels'").fetchone()[0]:
-        labels = dict(con.execute("SELECT keyword, label FROM keyword_labels WHERE store=?", [store]).fetchall())
+        for k, lab, sp in con.execute("SELECT keyword, label, specificity FROM keyword_labels WHERE store=?", [store]).fetchall():
+            labels[k], spec[k] = lab, sp
     hide = set(filters.get("hide_labels", ["brand", "rubbish"]))
-    vague_pen = float(filters.get("vague_penalty", 0))
-    broad_pen = float(filters.get("broad_penalty", 0))
+    spec_pen = float(cfg.get("labels", {}).get("composite_penalty", 8.0))
     require_sector = filters.get("require_sector", True)
     min_build = filters.get("min_buildability")
     min_band = filters.get("min_band_usd")
@@ -159,16 +161,14 @@ def composite(con, store: str = settings.store, snapshot_date: dt.date | None = 
                 contrib[m] = round(c, 2)
                 used.append(m)
                 wsum += abs(w)
-        if labels.get(e) == "vague":
-            score -= vague_pen
-        elif labels.get(e) == "broad":
-            score -= broad_pen
+        if spec.get(e) is not None:     # less specific needs lose up to composite_penalty points (specificity 1)
+            score -= spec_pen * (5 - max(1, min(5, spec[e]))) / 4
         total_w = sum(abs(w) for w in weights.values()) or 1.0
         coverage = wsum / total_w
         if min_cov is not None and coverage < min_cov:
             excluded.append(f"coverage<{min_cov}")
         rows.append({"entity_type": entity_type, "entity_id": e, "metric": "composite", "value": round(score, 4),
-                     "meta": json.dumps({"coverage": round(coverage, 2), "used": used, "excluded": bool(excluded), "label": labels.get(e), "reach": round(reach, 3), "contrib": contrib,
+                     "meta": json.dumps({"coverage": round(coverage, 2), "used": used, "excluded": bool(excluded), "label": labels.get(e), "specificity": spec.get(e), "reach": round(reach, 3), "contrib": contrib,
                                          "excluded_reason": ", ".join(excluded) or None}),
                      "snapshot_date": d, "computed_at": now})
     return upsert(con, "factor_values", rows)

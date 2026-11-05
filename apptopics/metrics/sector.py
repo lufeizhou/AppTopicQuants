@@ -54,7 +54,7 @@ def rpm_to_usd(cfg: dict, rpm: float) -> float:
     """Calibrated curve: US iOS ratings per month -> median monthly revenue (log-log interpolation)."""
     xs, ys = cfg.get("rpm_knots"), cfg.get("usd_knots")
     if not xs:
-        raise ValueError("config/weights.toml [monetization] needs rpm_knots / usd_knots (run calibrate-anchors)")
+        raise ValueError("config/model.toml [monetization] needs rpm_knots / usd_knots (run calibrate-anchors)")
     if rpm <= 0:
         return 0.0
     lx = math.log10(rpm)

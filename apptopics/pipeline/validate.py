@@ -3,7 +3,7 @@
   good_visible   share of 'good' niches not hidden                    target >= 0.8
   good_top_half  share of visible 'good' niches in the top half      (information only)
   junk_top100    'junk' keywords among the top 100 visible            target 0
-  label_top100   DeepSeek brand/vague/rubbish labels in the top 100   target <= 10
+  label_top100   DeepSeek brand/rubbish or specificity-1 labels in the top 100   target <= 10
   hard_flagged   share of 'hard' markets with difficulty >= 75        target >= 0.8
   grossing_rho   Spearman rank correlation, for apps on the overall top-grossing chart, between chart rank and
                  our rating-based revenue estimate (the estimator used for apps NOT on a chart). target >= 0.5
@@ -72,7 +72,7 @@ def validate(con, store: str = settings.store) -> dict:
         "good_visible": round(len(good_vis) / max(1, len(good)), 2),
         "good_top_half": round(sum(pos[k] < half for k in good_vis) / max(1, len(good_vis)), 2),
         "junk_top100": sum(k in top100 for k in g["junk"]),
-        "label_top100": sum(1 for k in top100 if meta[k].get("label") in ("brand", "vague", "rubbish")),
+        "label_top100": sum(1 for k in top100 if meta[k].get("label") in ("brand", "rubbish") or (meta[k].get("specificity") or 3) <= 1),
         "hard_flagged": round(sum((diff.get(k) or 0) >= 75 for k in g["hard"] if k in diff) / max(1, sum(k in diff for k in g["hard"])), 2),
         **grossing_check(con, store),
         "good_detail": {k: (pos[k] + 1 if k in pos else meta[k].get("excluded_reason")) for k in good},

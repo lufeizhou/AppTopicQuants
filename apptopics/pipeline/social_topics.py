@@ -149,7 +149,7 @@ def collect_topics(topic_ids: list[str], store: str = settings.store, video: boo
     return {"topics": out, "credits_used": sc.used, "usd": sc.cost_usd(), "credits_remaining": sc.remaining}
 
 
-def topics_by_grade(con, grades: str = "ABC", limit: int = 100) -> list[str]:
+def topics_by_grade(con, grades: str = "AB", limit: int = 100) -> list[str]:
     """Topic ids whose latest opportunity grade is in `grades`, best score first."""
     d = con.execute("SELECT max(snapshot_date) FROM factor_values WHERE entity_type='topic' AND metric='opp_score'").fetchone()[0]
     if d is None:

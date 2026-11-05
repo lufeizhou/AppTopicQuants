@@ -195,17 +195,17 @@ def _record_deepseek(ds, job: str, note: str) -> None:
 
 def score_items(terms: list[str], pop: dict, direction: dict, store: str) -> list[dict]:
     """One row per scored search: the latest factor values and index verdicts, plus the top-3 apps on its page."""
-    from .index import searches_per_day
+    from .index import JUDGED, searches_per_day
     con = connect_read_live()
     try:
         d = con.execute("SELECT max(snapshot_date) FROM factor_values WHERE metric='composite' AND entity_type='keyword'").fetchone()[0]
         rows = con.execute("""
             WITH fresh AS (SELECT DISTINCT metric FROM factor_values WHERE entity_type='keyword' AND snapshot_date=?),
                  r AS (SELECT entity_id, metric, value, meta FROM factor_values
-                       WHERE entity_type='keyword' AND entity_id IN (SELECT unnest(?)) AND (snapshot_date >= ? OR metric NOT IN (SELECT metric FROM fresh))
+                       WHERE entity_type='keyword' AND entity_id IN (SELECT unnest(?)) AND (snapshot_date >= ? OR metric NOT IN (SELECT metric FROM fresh) OR metric IN (SELECT unnest(?)))
                        QUALIFY row_number() OVER (PARTITION BY entity_id, metric ORDER BY snapshot_date DESC)=1)
             SELECT entity_id, map_from_entries(list((metric, value))), map_from_entries(list((metric, meta))) FROM r GROUP BY entity_id""",
-            [d, terms, d]).fetchall()
+            [d, terms, d, list(JUDGED)]).fetchall()
         top_apps = {}
         for kw, name, rc in con.execute("""SELECT keyword, name, rating_count FROM search_results WHERE keyword IN (SELECT unnest(?)) AND rank<=3
                 QUALIFY dense_rank() OVER (PARTITION BY keyword ORDER BY snapshot_date DESC)=1 ORDER BY keyword, rank""", [terms]).fetchall():
@@ -222,7 +222,7 @@ def score_items(terms: list[str], pop: dict, direction: dict, store: str) -> lis
                       "band_usd": (m.get("attainable") or {}).get("attainable_usd"), "p5k": v.get("breadth"),
                       "opp": v.get("opp_score"), "opp_grade": (m.get("opp_score") or {}).get("grade"),
                       "opp_action": (m.get("opp_score") or {}).get("action"), "opp_reason": (m.get("opp_score") or {}).get("reason"),
-                      "parts": (m.get("opp_score") or {}).get("parts"),
+                      "parts": (m.get("opp_score") or {}).get("parts"), "buildability": v.get("buildability"),
                       "aso": v.get("aso_score"), "aso_action": (m.get("aso_score") or {}).get("action"),
                       "aso_reason": (m.get("aso_score") or {}).get("reason"), "direction": direction.get(kw), "top_apps": top_apps.get(kw, [])})
     return items
@@ -232,7 +232,7 @@ def build_report(topic: str, terms: list[str], pop: dict, direction: dict, app: 
     from ..sources.deepseek import DeepSeekClient
     items = score_items(terms, pop, direction, store)
     unscored = [t for t in terms if t not in {i["keyword"] for i in items}]
-    by_opp = sorted([i for i in items if i["opp"]], key=lambda i: -i["opp"])
+    by_opp = sorted([i for i in items if i["opp"]], key=lambda i: ({"A": 0, "B": 1, "?": 2}.get(i.get("opp_grade"), 3), -i["opp"]))   # grade first, score inside
     by_aso = sorted([i for i in items if i["aso"] and i["aso_action"] != "Skip"], key=lambda i: -i["aso"])
     rising = sorted([i for i in items if (i["trend"] or 0) > 1], key=lambda i: -(i["trend"] or 0))[:15]
     # cluster scored terms into topics
@@ -264,7 +264,7 @@ def build_report(topic: str, terms: list[str], pop: dict, direction: dict, app: 
     _record_deepseek(ds, "research_report", topic)
     return {"topic": topic, "found": len(terms), "scored": len(items), "unscored": len(unscored),
             "build_now": [i for i in by_opp if i["opp_action"] == "Build now"][:20], "top_opportunities": by_opp[:40],
-            "unproven": sorted([i for i in items if i["opp_action"] == "Unproven"], key=lambda i: -(i["popularity"] or 0))[:40],
+            "unproven": sorted([i for i in items if (i.get("opp_reason") or "").startswith("not sure: too few")], key=lambda i: -(i["popularity"] or 0))[:40],
             "top_aso": by_aso[:40], "rising": rising, "clusters": clusters[:25], "metadata_suggestion": meta_suggestion}
 
 

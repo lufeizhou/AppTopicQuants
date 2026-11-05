@@ -4,7 +4,7 @@ Every scoring run snapshots, per graded keyword (cycle_id = scoring date):
   predictions     opp_score and its parts (money, reach, demand, conc_adj, build_adj, trend_adj), popularity,
                   band revenue and weak spots
   backtest_apps   the young apps (released <= 12 months before) that serve the keyword, with their rating count then
-  backtest_cycles the model version (hash of config/weights.toml + the score formula) so cycles made by different
+  backtest_cycles the model version (hash of config/model.toml + the score formula) so cycles made by different
                   models are never mixed
 After >= horizon days `backtest()` measures, per keyword, what really happened:
   winner          a young app of the sector gained ratings at a pace the calibrated curve maps to >= target/month

@@ -64,6 +64,15 @@ CREATE TABLE IF NOT EXISTS longtail_keywords (
 CREATE TABLE IF NOT EXISTS keyword_labels (
   store TEXT, keyword TEXT, label TEXT, p_brand DOUBLE, reason TEXT, model TEXT, labeled_at TIMESTAMP,
   PRIMARY KEY (store, keyword));
+-- label = type (need / brand / rubbish); specificity 1-5 for needs (2026-11-04, replaces broad/vague);
+-- context = 'top_apps' when DeepSeek saw the results page's top apps, else 'string'.
+ALTER TABLE keyword_labels ADD COLUMN IF NOT EXISTS specificity INTEGER;
+ALTER TABLE keyword_labels ADD COLUMN IF NOT EXISTS context TEXT;
+
+-- every search found by `apptopics expand` and where it came from (a term can come from several sources)
+CREATE TABLE IF NOT EXISTS expand_finds (
+  store TEXT, keyword TEXT, source TEXT, seed TEXT, info TEXT, found_at TIMESTAMP,
+  PRIMARY KEY (store, keyword, source));
 
 CREATE TABLE IF NOT EXISTS llm_votes (
   entity_type TEXT, entity_id TEXT, model TEXT, persona TEXT, score DOUBLE, rationale TEXT,

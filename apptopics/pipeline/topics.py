@@ -4,9 +4,9 @@
                      near-duplicate topic labels together. Replaces topics / topic_keywords. ~$0.10-0.30.
   build_topic_index  Topic score from its members' opportunity scores (run after every keyword index build):
                        score = 0.75 x best member + 0.25 x mean(top-3 members) + breadth bonus (up to +6)
-                       breadth bonus = 2 x log2(1 + members graded A-C): more good searches = more ways in
+                       breadth bonus = 2 x log2(1 + members graded A or B): more good searches = more ways in
                      x traffic adjustment 0.9 .. 1.0 (total searches/day 5 -> 0.9, 1,000+ -> 1.0)
-                     Grade cut-offs as keywords. Action Build now if grade A/B and its best member is Build now.
+                     Grade = the best member's grade (A can earn / B maybe / C no); the score orders topics inside a grade.
                      Hidden members (brands, games, thin sectors...) never count; a topic made only of hidden searches
                      gets a row flagged hidden (composite.excluded) so the dashboard shows it only on "Show hidden".
   attach_hidden      DeepSeek puts the hidden keywords into topics too: an existing topic when one fits, else a new
@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ..config import settings
 from ..db import connect_read_live, today, upsert
-from .index import HARD_HIDE, _grade, composite_date, keyword_factors, searches_per_day
+from .index import ACTIONS, GRADE_ORDER, HARD_HIDE, composite_date, keyword_factors, searches_per_day
 
 log = logging.getLogger("apptopics.topics")
 
@@ -191,20 +191,23 @@ def build_topic_index(con, store: str = settings.store, snapshot_date: dt.date |
         is_hidden = not ms
         use = ms or hs          # a hidden-only topic is scored from its hidden members, then flagged
         vals = [opp[k]["opp"] or 0 for k in use]
-        strong = 0 if is_hidden else sum(1 for k in use if opp[k].get("grade") in ("A", "B", "C"))
+        strong = 0 if is_hidden else sum(1 for k in use if opp[k].get("grade") in ("A", "B"))
         spd = sum(spd_of(k) for k in use)
         # small-traffic penalty: an app idea needs total search traffic, not one well-scored phrase (-10% at 5/day, 0 at 1,000+)
-        traffic_adj = 0.9 + 0.1 * min(1.0, max(0.0, (math.log10(max(spd, 1)) - math.log10(5)) / (3 - math.log10(5))))
-        score = round(min(100.0, (0.75 * vals[0] + 0.25 * sum(vals[:3]) / len(vals[:3]) + min(6.0, 2 * math.log2(1 + strong))) * traffic_adj), 1)
-        grade, best = _grade(score), use[0]
-        best_act = opp[best].get("action")
-        if not is_hidden and all(opp[k].get("grade") == "?" for k in use):
-            grade, best_act = "?", "Unproven"      # every member is too thin to judge: unknown, not bad
-            if all(opp[k].get("action") == "No data" for k in use):
-                best_act = "No data"
-        action = ("Avoid" if is_hidden else best_act if grade == "?" else
-                  "Build now" if grade in "AB" and best_act == "Build now" else
-                  "Watch" if grade in "ABC" and best_act in ("Build now", "Watch") else "Avoid")
+        tw = settings.section("topics")
+        tf, tlo, thi = float(tw.get("traffic_floor", 0.9)), float(tw.get("traffic_low_per_day", 5)), float(tw.get("traffic_high_per_day", 1000))
+        traffic_adj = tf + (1 - tf) * min(1.0, max(0.0, (math.log10(max(spd, 1)) - math.log10(tlo)) / (math.log10(thi) - math.log10(tlo))))
+        score = round(min(100.0, (float(tw.get("best", 0.75)) * vals[0] + float(tw.get("top3", 0.25)) * sum(vals[:3]) / len(vals[:3])
+                                  + min(float(tw.get("bonus_max", 6.0)), float(tw.get("bonus_per", 2.0)) * math.log2(1 + strong))) * traffic_adj), 1)
+        # grade = best member's grade (A can earn > B maybe > ? not sure > C no; "-" = nothing fetched): one A search is a way in
+        order = GRADE_ORDER
+        best = min(use, key=lambda k: (order.get(opp[k].get("grade"), 4), -(opp[k]["opp"] or 0)))
+        # hidden-only topic: C (brand, games, rubbish) unless a member is only unknown (thin sector) -> ? "not sure"
+        grade = (("?" if any(opp[k].get("unknown") for k in use) else "C") if is_hidden else opp[best].get("grade") or "-")
+        if grade not in order:
+            grade = "-"
+        action = "No data" if grade == "-" else ACTIONS[grade]
+        n_a = 0 if is_hidden else sum(1 for k in use if opp[k].get("grade") == "A")
         pops = [F.get(k, {}).get("demand") or 0 for k in use]
         difs = [F[k]["difficulty"] for k in use if F.get(k, {}).get("difficulty") is not None]
         trs = [F[k]["trending"] for k in use if F.get(k, {}).get("trending") is not None]
@@ -213,7 +216,8 @@ def build_topic_index(con, store: str = settings.store, snapshot_date: dt.date |
         if is_hidden:
             reason = f"hidden: all {len(hs)} searches fail a hard rule ({why}) · ~{spd:,.0f} searches/day in total"
         else:
-            reason = (f"{len(ms)} searches ({strong} graded A-C) · best: “{best}” {opp[best].get('grade')} · ~{spd:,.0f} searches/day in total"
+            reason = (f"{len(ms)} searches ({n_a} A, {strong - n_a} B) · best: “{best}” {opp[best].get('grade')}: {opp[best].get('reason') or ''}"
+                      + f" · ~{spd:,.0f} searches/day in total"
                       + (f" · p5-p20 apps earn ~${band:,.0f}/mo" if band else "") + (f" · +{len(hs)} hidden" if hs else ""))
         top = [{"keyword": k, "opp": opp[k]["opp"], "grade": opp[k].get("grade"), "action": opp[k].get("action"),
                 "popularity": F.get(k, {}).get("demand"), "difficulty": F.get(k, {}).get("difficulty"),
@@ -282,10 +286,13 @@ def _merge_near_duplicates(topics: dict[str, dict], clients: list, workers: int 
     return n_merged
 
 
-def attach_hidden(store: str = settings.store, batch: int = 120, workers: int = 6, min_pop: float = 5) -> dict:
+def attach_hidden(store: str = settings.store, batch: int = 120, workers: int = 6, min_pop: float = 5,
+                  only_hidden: bool = True, terms_in: list[str] | None = None) -> dict:
     """Put the hidden keywords (brands, games, thin sectors, non-latin...) into topics as well, so the dashboard can show
     them next to the visible searches of the same product. DeepSeek assigns each to an existing topic label when one
-    fits, else to a new topic; near-duplicate new labels are merged. Topic scores ignore hidden members."""
+    fits, else to a new topic; near-duplicate new labels are merged. Topic scores ignore hidden members.
+    only_hidden=False attaches every scored keyword not yet in a topic (new searches from `apptopics expand`), so new
+    terms join existing topics without rebuilding them; terms_in limits it to those keywords."""
     from .. import budget
     from ..sources.deepseek import DeepSeekClient
     from .collect import slugify
@@ -297,7 +304,9 @@ def attach_hidden(store: str = settings.store, batch: int = 120, workers: int = 
                                   QUALIFY row_number() OVER (PARTITION BY entity_id ORDER BY snapshot_date DESC)=1""").fetchall())
         done = {k for (k,) in con.execute("SELECT keyword FROM topic_keywords WHERE store=?", [store]).fetchall()}
         topics = {t: {"label": l, "description": d or ""} for t, l, d in con.execute("SELECT topic_id, label, description FROM topics").fetchall()}
-    terms = sorted({k for k, r in opp.items() if r["hard_hidden"] and k not in done and (pop.get(k) or 0) >= min_pop}, key=_batch_key)
+    want = set(terms_in) if terms_in is not None else None
+    terms = sorted({k for k, r in opp.items() if (r["hard_hidden"] or not only_hidden) and k not in done and (pop.get(k) or 0) >= min_pop
+                    and (want is None or k in want)}, key=_batch_key)
     if not terms:
         return {"terms": 0}
     if not write_retry(lambda c: budget.guard(c, "deepseek", "topics", len(terms))):

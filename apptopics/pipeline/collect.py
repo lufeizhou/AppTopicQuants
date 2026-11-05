@@ -258,10 +258,16 @@ def collect_llm_brands(con, keywords: list[str], store: str = settings.store) ->
                     lambda ds: upsert(con, "factor_values", _factor_rows("llm_brand", ds.classify_brands(keywords))))
 
 
-def collect_llm_labels(store: str = settings.store, relabel: bool = False, workers: int = 8, chunk: int = 40) -> dict:
-    """Label every universe keyword need/brand/vague/rubbish with DeepSeek, giving it the top-3 app names as
-    context. Reads with a read-only connection, calls the API without holding the write lock (results are
-    cached in data/cache/llm_labels.jsonl so a crash resumes), then writes keyword_labels + llm_brand."""
+def collect_llm_labels(store: str = settings.store, relabel: bool = False, workers: int = 8, chunk: int = 40,
+                       scope: str = "new") -> dict:
+    """Label universe keywords with DeepSeek: type need/brand/rubbish + specificity 1-5 for needs, giving it the
+    top-3 app names of the results page as context when the page exists.
+      scope 'new'     only keywords with no label yet
+      'context'       also keywords labelled without a results page that now have one (context='string' or unknown)
+      'pages'         every keyword with a results page (relabel with context)
+      'all'           every universe keyword
+    Reads with a read-only connection, calls the API without holding the write lock (results are cached in
+    data/cache/llm_labels_v2.jsonl so a crash resumes), then writes keyword_labels + llm_brand."""
     import json
     from concurrent.futures import ThreadPoolExecutor
 
@@ -271,7 +277,7 @@ def collect_llm_labels(store: str = settings.store, relabel: bool = False, worke
     ds = DeepSeekClient()
     if not ds.available:
         raise RuntimeError("DEEPSEEK_API_KEY not set")
-    cache_p = settings.db_path.parent / "cache" / "llm_labels.jsonl"
+    cache_p = settings.db_path.parent / "cache" / "llm_labels_v2.jsonl"
     cache_p.parent.mkdir(parents=True, exist_ok=True)
     cache = {}
     if cache_p.exists() and not relabel:
@@ -281,14 +287,23 @@ def collect_llm_labels(store: str = settings.store, relabel: bool = False, worke
     con = connect_read_live()
     try:
         kws = [k for (k,) in con.execute("SELECT keyword FROM keywords WHERE store=? AND snapshot_date=(SELECT max(snapshot_date) FROM keywords WHERE store=?) ORDER BY popularity DESC", [store, store]).fetchall()]
-        done = set() if relabel else {k for (k,) in con.execute("SELECT keyword FROM keyword_labels WHERE store=?", [store]).fetchall()} if con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name='keyword_labels'").fetchone()[0] else set()
+        labelled = {k: ctx for k, ctx in con.execute("SELECT keyword, context FROM keyword_labels WHERE store=?", [store]).fetchall()}
         tops: dict[str, list[str]] = {}
         for kw, name in con.execute("""SELECT keyword, name FROM search_results WHERE store=? AND rank<=3
                 QUALIFY dense_rank() OVER (PARTITION BY keyword ORDER BY snapshot_date DESC)=1 ORDER BY keyword, rank""", [store]).fetchall():
             tops.setdefault(kw, []).append(name)
     finally:
         con.close()
-    todo = [k for k in kws if k not in done and k not in cache]
+    if relabel or scope == "all":
+        want = list(kws)
+    elif scope == "pages":
+        want = [k for k in kws if k in tops]
+    elif scope == "context":
+        want = [k for k in kws if k not in labelled or (k in tops and labelled[k] != "top_apps")]
+    else:
+        want = [k for k in kws if k not in labelled]
+    # a cached v2 answer is reused only if it was made with the same context (page or no page)
+    todo = [k for k in want if not (k in cache and cache[k].get("context") == ("top_apps" if k in tops else "string"))]
     est = budget.estimate_job("deepseek", "llm_labels", len(todo))
     log.info("llm labels: %d keywords to label (est $%.3f), %d cached", len(todo), est, len(cache))
     from .discover import write_retry
@@ -306,15 +321,17 @@ def collect_llm_labels(store: str = settings.store, relabel: bool = False, worke
         with lock, cache_p.open("a") as f:
             for k in batch:
                 if k in res:
-                    r = {"term": k, **res[k]}; cache[k] = r; f.write(json.dumps(r) + "\n")
+                    r = {"term": k, **res[k], "context": "top_apps" if k in tops else "string"}; cache[k] = r; f.write(json.dumps(r) + "\n")
         return len(res)
     with ThreadPoolExecutor(workers) as ex:
         for i, _n in enumerate(ex.map(run, batches), 1):
             if i % 20 == 0:
                 log.info("llm labels: %d/%d batches", i, len(batches))
     now = dt.datetime.now()
+    wanted = set(want)
     rows = [{"store": store, "keyword": k, "label": r["label"], "p_brand": r["p_brand"], "reason": r["reason"],
-             "model": ds.model, "labeled_at": now} for k, r in cache.items() if k in set(kws)]
+             "model": ds.model, "labeled_at": now, "specificity": r.get("specificity"), "context": r.get("context")}
+            for k, r in cache.items() if k in wanted]
 
     def _w(wcon):
         upsert(wcon, "keyword_labels", rows)
@@ -322,7 +339,8 @@ def collect_llm_labels(store: str = settings.store, relabel: bool = False, worke
         budget.record(wcon, "deepseek", "llm_labels", ds.usage_in + ds.usage_out, ds.cost_usd(), f"{len(todo)} keywords")
     write_retry(_w)
     from collections import Counter
-    return {"labeled": len(rows), "new": len(todo), "usd": round(ds.cost_usd(), 4), "labels": dict(Counter(r["label"] for r in rows))}
+    return {"labeled": len(rows), "new": len(todo), "usd": round(ds.cost_usd(), 4), "labels": dict(Counter(r["label"] for r in rows)),
+            "specificity": dict(sorted(Counter(r["specificity"] for r in rows if r["label"] == "need").items()))}
 
 
 def collect_llm_buildability(con, keywords: list[str], store: str = settings.store) -> int:
@@ -641,7 +659,7 @@ def collect_longtail(store: str = settings.store, seeds_limit: int | None = None
     try:
         seeds = [k for (k,) in con.execute("""SELECT l.keyword FROM keyword_labels l JOIN keywords k ON k.keyword=l.keyword AND k.store=l.store
                  AND k.snapshot_date=(SELECT max(snapshot_date) FROM keywords WHERE store=?)
-                 WHERE l.store=? AND l.label='need' ORDER BY k.popularity DESC""", [store, store]).fetchall()]
+                 WHERE l.store=? AND l.label='need' AND coalesce(l.specificity, 3) >= 3 ORDER BY k.popularity DESC""", [store, store]).fetchall()]
         known = {k for (k,) in con.execute("SELECT DISTINCT keyword FROM keywords WHERE store=?", [store]).fetchall()}
         if con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name='longtail_keywords'").fetchone()[0]:
             known |= {k for (k,) in con.execute("SELECT keyword FROM longtail_keywords WHERE store=?", [store]).fetchall()}

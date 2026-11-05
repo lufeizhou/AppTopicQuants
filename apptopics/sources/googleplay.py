@@ -27,6 +27,30 @@ class PlayClient:
         res = self._gp().search(term, num=num, lang=self.lang, country=self.country)
         return [r.model_dump() if hasattr(r, "model_dump") else dict(r) for r in res]
 
+    def suggest(self, term: str) -> list[str]:
+        """Google Play search autocomplete (free, unofficial batchexecute endpoint 'IJ4APc'; may change without notice).
+        Returns up to ~5 phrases in the order Play shows them."""
+        import json as _json
+
+        import httpx
+        self.limiter.wait()
+        freq = _json.dumps([[["IJ4APc", _json.dumps([[None, [term], [10], [2], 4]]), None, "generic"]]])
+        r = httpx.post("https://play.google.com/_/PlayStoreUi/data/batchexecute",
+                       params={"rpcids": "IJ4APc", "hl": self.lang, "gl": self.country}, data={"f.req": freq},
+                       headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"}, timeout=20)
+        r.raise_for_status()
+        for line in r.text.splitlines():
+            if line.startswith('[["wrb.fr"'):
+                inner = _json.loads(line)[0][2]
+                if not inner:
+                    return []
+                data = _json.loads(inner)
+                try:
+                    return [str(e[0]).strip().lower() for e in data[0][0] if e and e[0]]
+                except (IndexError, TypeError):
+                    return []
+        return []
+
     def chart(self, collection: str = "GROSSING", category: str = "APPLICATION", num: int = 100) -> list[dict]:
         from google_play_scraper import Category, Collection
         self.limiter.wait()

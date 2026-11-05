@@ -41,14 +41,22 @@ def looks_like_app_name(term: str) -> bool:
 
 
 def label_terms(terms: list[str], store: str = settings.store) -> dict[str, dict]:
-    """DeepSeek need/brand/vague/rubbish labels for terms not labelled yet (cached in keyword_labels)."""
+    """DeepSeek type (need/brand/rubbish) + specificity labels for terms not labelled yet (cached in keyword_labels).
+    Uses the top-3 apps of a results page when one exists (context 'top_apps'), else the string alone ('string');
+    `apptopics llm labels --scope context` relabels string-only terms once their page arrives."""
     from concurrent.futures import ThreadPoolExecutor
 
     from ..sources.deepseek import DeepSeekClient
     con = connect_read_live()
     try:
-        have = {k: {"label": l, "p_brand": p} for k, l, p in con.execute(
-            "SELECT keyword, label, p_brand FROM keyword_labels WHERE store=?", [store]).fetchall()}
+        have = {k: {"label": l, "p_brand": p, "specificity": s} for k, l, p, s in con.execute(
+            "SELECT keyword, label, p_brand, specificity FROM keyword_labels WHERE store=?", [store]).fetchall()}
+        tops: dict[str, list[str]] = {}
+        todo0 = [t for t in dict.fromkeys(terms) if t not in have]
+        if todo0:
+            for kw, name in con.execute("""SELECT keyword, name FROM search_results WHERE store=? AND rank<=3 AND keyword IN (SELECT unnest(?))
+                    QUALIFY dense_rank() OVER (PARTITION BY keyword ORDER BY snapshot_date DESC)=1 ORDER BY keyword, rank""", [store, todo0]).fetchall():
+                tops.setdefault(kw, []).append(name)
     finally:
         con.close()
     todo = [t for t in dict.fromkeys(terms) if t not in have]
@@ -57,7 +65,7 @@ def label_terms(terms: list[str], store: str = settings.store) -> dict[str, dict
     if todo and ds.available:
         def one(chunk):
             try:
-                return ds.label_keywords([{"term": t, "top_apps": []} for t in chunk])
+                return ds.label_keywords([{"term": t, "top_apps": tops.get(t, [])} for t in chunk])
             except Exception as e:
                 log.warning("label batch failed: %r", e)
                 return {}
@@ -66,7 +74,9 @@ def label_terms(terms: list[str], store: str = settings.store) -> dict[str, dict
                 new.update(r)
         now = dt.datetime.now()
         write_retry(lambda c: upsert(c, "keyword_labels", [{"store": store, "keyword": k, "label": v["label"], "p_brand": v["p_brand"],
-                                                             "reason": v["reason"], "model": ds.model, "labeled_at": now}
+                                                             "reason": v["reason"], "model": ds.model, "labeled_at": now,
+                                                             "specificity": v.get("specificity"),
+                                                             "context": "top_apps" if k in tops else "string"}
                                                             for k, v in new.items()]))
     return {t: (have.get(t) or new.get(t) or {}) for t in terms}
 
@@ -166,7 +176,7 @@ def mine_pain_points(store: str = settings.store, grades: tuple[str, ...] = ("A"
             d = con.execute("SELECT max(snapshot_date) FROM factor_values WHERE metric='opp_score' AND entity_type='keyword'").fetchone()[0]
             keywords = [k for k, m in con.execute("SELECT entity_id, meta FROM factor_values WHERE metric='opp_score' AND entity_type='keyword' "
                                                   "AND snapshot_date=? ORDER BY value DESC", [d]).fetchall()
-                        if json.loads(m).get("grade") in grades and json.loads(m).get("action") != "Avoid"]
+                        if json.loads(m).get("grade") in grades and json.loads(m).get("action") != "No"]
         ensure_sr_latest(con)
         _, (lo, hi), _ = _target_cfg()
         est = sector_estimates(con, store, today())

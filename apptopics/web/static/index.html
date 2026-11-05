@@ -60,14 +60,14 @@ tbody tr{cursor:pointer}tbody tr:hover td{background:#F9FAFB}tr.sel td{backgroun
 .gb.gA{background:var(--blue-d);color:#fff}.gb.gB{background:#DBEAFE;color:var(--blue-dd)}.gb.gC{background:#F3F4F6;color:#374151}.gb.gD,.gb.gE{background:#fff;color:var(--muted);border:1px solid var(--line)}.gb.gQ{background:#fff;color:var(--text-2);border:1px dashed #9CA3AF}
 .sc{font-variant-numeric:tabular-nums;font-weight:600;margin-right:6px}
 .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;border:1px solid var(--line);color:var(--text-2);font-weight:500}
-.pill.build,.pill.target{border-color:#BFDBFE;background:var(--blue-bg);color:var(--blue-dd)}.pill.watch,.pill.later{border-color:#FDE68A;background:var(--amber-bg);color:var(--amber-t)}.pill.avoid,.pill.skip{color:var(--muted)}.pill.unproven{border-style:dashed;color:var(--text-2)}.pill.no{border-style:dotted;color:var(--muted)}
+.pill.build,.pill.target{border-color:#BFDBFE;background:var(--blue-bg);color:var(--blue-dd)}.pill.watch,.pill.later{border-color:#FDE68A;background:var(--amber-bg);color:var(--amber-t)}.pill.avoid,.pill.skip{color:var(--muted)}.pill.unproven{border-style:dashed;color:var(--text-2)}.pill.no{border-style:dotted;color:var(--muted)}.pill.not{border-style:dashed;color:var(--text-2)}.pill.maybe{border-color:#FDE68A;background:var(--amber-bg);color:var(--amber-t)}
 .tag{display:inline-block;padding:0 6px;border-radius:4px;font-size:11px;background:var(--surface-2);border:1px solid var(--line);color:var(--text-2);margin-right:5px;font-weight:500}
 /* detail */
 .kicker{font-size:11px;color:var(--text-2);text-transform:uppercase;letter-spacing:.07em}
 .detail h2{margin:4px 0 0;font-size:21px;font-weight:700;letter-spacing:-.01em}
 .verdict{display:flex;gap:14px;align-items:center;padding:13px 15px;border-radius:12px;background:var(--surface-2);margin:14px 0 4px}
 .verdict .big{width:44px;height:44px;flex:none;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:21px;background:#E5E7EB;color:#374151}
-.verdict.build{background:var(--blue-bg)}.verdict.build .big{background:var(--blue-d);color:#fff}.verdict.build b,.verdict.build .why{color:var(--blue-dd)}
+.verdict.maybe{background:var(--amber-bg)}.verdict.build{background:var(--blue-bg)}.verdict.build .big{background:var(--blue-d);color:#fff}.verdict.build b,.verdict.build .why{color:var(--blue-dd)}
 .verdict.watch{background:var(--amber-bg)}.verdict.watch .big{background:var(--amber);color:#422006}.verdict.watch b,.verdict.watch .why{color:var(--amber-t)}
 .verdict .why{font-size:12.5px;margin-top:2px;color:var(--text-2)}
 .rec{background:var(--surface-2);border-radius:10px;padding:10px 12px;margin:8px 0;font-size:13px}.rec .why{color:var(--text-2);font-size:12px;margin-top:2px}
@@ -260,7 +260,7 @@ const info=t=>`<span class="i" data-tip="${esc(t)}">i</span>`;
 /* ---------- plain-language explanations ---------- */
 const TIP={
  keyword:"The App Store search term (our 'ticker').",
- opp_score:"<b>New-app opportunity</b>, 0–100. 100 × money^0.45 × reach^0.35 × demand^0.20, adjusted for concentration, buildability and trend. Grades: A ≥ 50, B ≥ 38, C ≥ 28, D ≥ 18. Actions: <b>Build now</b> (A/B with known buildability), <b>Watch</b> (C, or A/B not yet judged buildable), <b>Avoid</b>, <b>Unproven</b> (fewer than 30 relevant apps: no market to measure), <b>No data</b> (results page not fetched yet).",
+ opp_score:"<b>New-app opportunity</b>, 0–100. 100 × money^0.45 × reach^0.35 × demand^0.20, adjusted for concentration, buildability and trend. The score only orders searches inside a grade. <b>Grades are evidence checks</b>: <b>A · Build now</b> (can earn): p5–p20 apps earn $5k+/month, 2+ apps under 2 years old earn $5k+, popularity ≥ 30 (~17 searches/day) and judged buildable. <b>B · Maybe</b>: money exists but a check fails. <b>? · Not sure</b>: the market cannot be measured yet (too few apps serve it). <b>C · No</b>: no money, hard to build, or a brand/junk search. <b>–</b> No data: results page not fetched yet.",
  aso_score:"<b>ASO keyword</b>, 0–100: should an app already in this space target this keyword? Searches/day × how many top-10 spots are weak. <b>Target now</b> = ≥3 weak spots; <b>Later</b> = needs ratings first.",
  demand:"Apple search popularity, 5–100 (Apple Ads; Astro for long-tail). Roughly 70 searches/day at 40, ×1.15 per point (≈280/day at 50, ≈1,150 at 60).",
  trending:"Change in Apple popularity this week vs the weeks it was seen in the previous 12. ▲ rising, ▼ falling.",
@@ -311,7 +311,7 @@ const USD=r=>r.meta?.attainable?.attainable_usd;
 const PARTS=r=>r.meta?.opp_score?.parts||{};
 const diffWord=v=>v==null?"":v<40?"easy":v<60?"medium":v<75?"hard":"very hard";
 function gradeHtml(r,k){const m=r.meta?.[k]||{};const v=r[k];if(v==null)return"<span class='muted'>–</span>";
- return`<span data-tip="${esc(m.reason||"")}" style="display:inline-flex;align-items:center"><span class="gb g${(m.grade||"E").replace("?","Q")}">${m.grade||"–"}</span><span class="sc">${Math.round(v)}</span><span class="pill ${actCls(m.action)}">${esc(m.action||"")}</span></span>`}
+ return`<span data-tip="${esc(m.reason||"")}" style="display:inline-flex;align-items:center"><span class="gb g${(m.grade||"E").replace("?","Q").replace("-","Q")}">${m.grade||"–"}</span><span class="sc">${Math.round(v)}</span><span class="pill ${actCls(m.action)}">${esc(m.action||"")}</span></span>`}
 function cell(r,k,hib){const v=r[k];
  if(v==null)return"<span class='muted'>–</span>";
  let txt;if(k==="demand"||k==="difficulty"||k==="weak_spots")txt=Math.round(v);
@@ -378,7 +378,7 @@ function compare(){const sel_=[...cmp].map(k=>rows.find(r=>r.keyword===k)).filte
   ["p5–p20 earns",r=>usd(r)!=null?"$"+n0(usd(r))+"/mo":"–",r=>usd(r),1],["P(app ≥ $5k)",r=>pc(r.breadth),r=>r.breadth,1],
   ["Top-5% share",r=>pc(r.concentration),r=>r.concentration,-1],["Newcomers",r=>pc(r.entrant_share),r=>r.entrant_share,1],
   ["Buildable",r=>pc(r.buildability),r=>r.buildability,1],["ASO",r=>r.aso_score!=null?`<span class="grade">${r.meta?.aso_score?.grade||""}</span>${n0(r.aso_score)}`:"–",r=>r.aso_score,1],
-  ["Searches in topic",r=>om(r).n_members!=null?`${om(r).n_members} (${om(r).n_strong} A–C)`:"–",r=>om(r).n_members,1],
+  ["Searches in topic",r=>om(r).n_members!=null?`${om(r).n_members} (${om(r).n_strong} A/B)`:"–",r=>om(r).n_members,1],
   ];
  let h=`<h2>Compare ${sel_.length} ${sel_.length>1?"niches":"niche"}</h2><p class="sub">Blue = best in the row. Tick rows in the table to add or remove (up to 5). <a href="#" id="cmpback">← back</a></p><table class="cmp"><thead><tr><th></th>${sel_.map(r=>`<th>${esc(r.label||r.keyword)}</th>`).join("")}</tr></thead><tbody>`;
  for(const [name,fmt,val,dir] of R){let best=null;if(val&&dir){const vs=sel_.map(val);const ok=vs.filter(v=>v!=null);if(ok.length>1){const b=dir>0?Math.max(...ok):Math.min(...ok);best=vs.findIndex(v=>v===b)}}
@@ -411,18 +411,18 @@ function showOwn(){const a=OWN.find(x=>x.name===ownSel);if(!a)return;
  $("#count").textContent=`${a.name}: ${rows.length} metadata terms · ranking for ${a.terms.filter(t=>t.rank).length}, ${reach.length} with 3+ open spots`+(moved.length?` · moved: ${moved.slice(0,6).map(t=>`${t.term} #${t.rank_first}→#${t.rank}`).join(", ")}`:"")+(miss.length?` · not tracked: ${miss.join(", ")}`:"")}
 
 
-const ACOL={"Build now":"#2563EB","Watch":"#FBBF24"};
+const ACOL={"Build now":"#2563EB","Maybe":"#FBBF24"};
 function drawMR(){
  const W=Math.max(480,$("#map").clientWidth||1000),H=380,m={l:60,r:18,t:16,b:40};
  const ok=r=>r.meta?.opp_score?.parts?.reach!=null&&r.meta?.attainable?.attainable_usd>0;
  const hid=r=>!!r.meta?.composite?.excluded,act=r=>r.meta?.opp_score?.action;
- let pts=rows.filter(r=>ok(r)&&!hid(r)&&(act(r)==="Build now"||act(r)==="Watch"));const nAll=pts.length;
+ let pts=rows.filter(r=>ok(r)&&!hid(r)&&(act(r)==="Build now"||act(r)==="Maybe"));const nAll=pts.length;
  if(!mapAll)pts=[...pts].sort((a,b)=>(b.opp_score||0)-(a.opp_score||0)).slice(0,MAPN);
  const hidPts=$("#excl").checked?rows.filter(r=>ok(r)&&hid(r)).slice(0,80):[];
  const nb=pts.filter(r=>act(r)==="Build now").length,nw=pts.length-nb;
  $("#mapall").textContent=nAll>MAPN?(mapAll?`Show only the top ${MAPN}`:`Show all ${nAll}`):"";
- $("#mapnote").textContent=pts.length?`${mapAll||nAll<=MAPN?"Showing":"Top "+pts.length+" by score:"} ${nb} Build now and ${nw} Watch ${topicMode()?"ideas":"keywords"} (of ${rows.length.toLocaleString()} in the table)${hidPts.length?`, plus ${hidPts.length} hidden (dashed)`:""}. Dot size = searches per day. Hover a dot for its numbers, click it for details.`:"";
- if(!pts.length&&!hidPts.length){$("#map").innerHTML="<p class='sub' style='padding:30px 0'>No Build now or Watch ideas for the current filter.</p>";return}
+ $("#mapnote").textContent=pts.length?`${mapAll||nAll<=MAPN?"Showing":"Top "+pts.length+" by score:"} ${nb} Build now and ${nw} Maybe ${topicMode()?"ideas":"keywords"} (of ${rows.length.toLocaleString()} in the table)${hidPts.length?`, plus ${hidPts.length} hidden (dashed)`:""}. Dot size = searches per day. Hover a dot for its numbers, click it for details.`:"";
+ if(!pts.length&&!hidPts.length){$("#map").innerHTML="<p class='sub' style='padding:30px 0'>No Build now or Maybe ideas for the current filter.</p>";return}
  const all=pts.concat(hidPts),usd=r=>r.meta.attainable.attainable_usd,reach=r=>r.meta.opp_score.parts.reach;
  const ly0=Math.log10(Math.max(500,Math.min(...all.map(usd))*0.8)),ly1=Math.log10(Math.max(...all.map(usd))*1.25);
  const x=v=>m.l+v*(W-m.l-m.r),y=v=>H-m.b-((Math.log10(v)-ly0)/(ly1-ly0))*(H-m.t-m.b);
@@ -437,7 +437,7 @@ function drawMR(){
  g+=`<text class="zone hi" x="${x(1)-10}" y="${m.t+18}" text-anchor="end">Easy to enter, pays well</text><text class="zone" x="${m.l+8}" y="${m.t+18}">Pays well, hard to enter</text>`;
  g+=`<text x="${(m.l+W-m.r)/2}" y="${H-6}" text-anchor="middle">Ease of entry for a new app →</text><text transform="translate(14 ${(m.t+H-m.b)/2}) rotate(-90)" text-anchor="middle">Small apps earn / month →</text>`;
  for(const r of hidPts)g+=`<circle data-k="${encodeURIComponent(r.keyword)}" cx="${x(reach(r)).toFixed(1)}" cy="${y(usd(r)).toFixed(1)}" r="${rad(r).toFixed(1)}" fill="none" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="2 2"/>`;
- for(const r of [...pts].sort((a,b)=>(act(a)==="Watch"?0:1)-(act(b)==="Watch"?0:1)||SPD(b)-SPD(a)))
+ for(const r of [...pts].sort((a,b)=>(act(a)==="Maybe"?0:1)-(act(b)==="Maybe"?0:1)||SPD(b)-SPD(a)))
   g+=`<circle data-k="${encodeURIComponent(r.keyword)}" class="${sel===r.keyword?'sel':''}" cx="${x(reach(r)).toFixed(1)}" cy="${y(usd(r)).toFixed(1)}" r="${rad(r).toFixed(1)}" fill="${ACOL[act(r)]}"/>`;
  const placed=[];for(const r of pts.filter(r=>act(r)==="Build now").sort((a,b)=>(b.opp_score||0)-(a.opp_score||0)).slice(0,10)){
   const lx=x(reach(r))+rad(r)+5,ly=y(usd(r))+4,txt=r.label||r.keyword,w=txt.length*6.4;
@@ -449,7 +449,7 @@ function drawMR(){
   c.onclick=()=>detail(r.keyword)})}
 let mapMode="mr",mapAll=false;const MAPN=60;
 document.addEventListener("click",e=>{if(e.target.id==="mapall"){e.preventDefault();mapAll=!mapAll;drawMap()}});
-const LEG_MR=`<span><i style="background:#2563EB"></i>Build now</span><span><i style="background:#FBBF24"></i>Watch</span><span><i style="border:1.5px dashed #9CA3AF"></i>hidden</span><span>size = searches/day · labels = top 10</span>`;
+const LEG_MR=`<span><i style="background:#2563EB"></i>Build now</span><span><i style="background:#FBBF24"></i>Maybe</span><span><i style="border:1.5px dashed #9CA3AF"></i>hidden</span><span>size = searches/day · labels = top 10</span>`;
 const LEG_DP=`<span>x = difficulty, y = popularity, size = what small apps earn</span><span><i style="background:var(--s1)"></i>rising ▲</span><span><i style="background:#9CA3AF"></i>flat</span><span><i style="background:var(--s2)"></i>falling ▼</span><span><i style="border:2.5px solid var(--text)"></i>grade A</span><span><i style="border:1.2px solid var(--text)"></i>grade B</span><span><i style="border:1.6px dashed var(--text-2)"></i>hidden</span>`;
 function setMapMode(mm){mapMode=mm;document.querySelectorAll("#mapview button").forEach(x=>x.classList.toggle("on",x.dataset.m===mm));
  $("#maplogwrap").style.display=mm==="dp"?"":"none";$("#maplegend").innerHTML=mm==="dp"?LEG_DP:LEG_MR;
@@ -531,11 +531,11 @@ async function detail(kw,force){const ent=force||($("#entity").disabled?"keyword
  let h=back+`<div class="kicker">Search${m.composite?.label?` · ${esc(m.composite.label)}`:""}</div><h2>${esc(r.label||kw)}</h2>`;
  if(hid)h+=`<p class="sub" style="font-size:13px;margin:6px 0 0"><span class="tag">hidden</span>${esc(m.composite.excluded_reason||"")}</p>`;
  h+=verdictBox(om,r.opp_score);
- if(om.action==="Unproven"){const nrel=m.intent?.relevant_apps,gv=r.search_volume!=null?Math.round(Math.pow(10,r.search_volume)):null;
+ if(om.grade==="?"&&(om.reason||"").startsWith("not sure: too few")){const nrel=m.intent?.relevant_apps,gv=r.search_volume!=null?Math.round(Math.pow(10,r.search_volume)):null;
   const sig=[gv!=null?`Google ≈ ${gv.toLocaleString()} searches/month`:null,r.cpc!=null?`CPC $${(+r.cpc).toFixed(2)}`:null,r.trend_slope!=null?`Google trend ${r.trend_slope>0?"+":""}${Math.round(r.trend_slope*100)}% over 12 months`:null,r.weak_spots!=null?`${Math.round(r.weak_spots)} open spots in the top 10`:null,r.difficulty!=null?`difficulty ${Math.round(r.difficulty)}`:null].filter(Boolean);
   h+=`<div class="card" style="margin:10px 0;padding:10px 12px"><b>Thin market</b> <span class="sub">${nrel!=null?`${nrel} apps really serve this search; 30 are needed to measure what small apps earn`:"the store has no measurable market for this search yet"}.</span><div class="small" style="margin-top:6px">${sig.length?sig.join(" · "):"no off-store signals stored yet"}</div><p class="sub" style="margin:6px 0 0">Nobody has proven this market in the store. That is an opening only if people want it elsewhere (videos, Reddit): run a research report before building.</p></div>`}
  else if(om.action==="No data")h+=`<p class="sub" style="margin:8px 0">The results page for this search has not been fetched yet, so there is nothing to judge. It is fetched when its popularity reaches 20 or a research run finds it.</p>`;
- h+=`<div class="aso"><b style="color:var(--text)">ASO</b>${info(TIP.aso_score)} <span class="gb g${(am.grade||"E").replace("?","Q")}">${am.grade||"–"}</span><span class="sc">${n0(r.aso_score)}</span><span class="pill ${actCls(am.action)}">${esc(am.action||"–")}</span><span>${esc(am.reason||"")}</span></div>`;
+ h+=`<div class="aso"><b style="color:var(--text)">ASO</b>${info(TIP.aso_score)} <span class="gb g${(am.grade||"E").replace("?","Q").replace("-","Q")}">${am.grade||"–"}</span><span class="sc">${n0(r.aso_score)}</span><span class="pill ${actCls(am.action)}">${esc(am.action||"–")}</span><span>${esc(am.reason||"")}</span></div>`;
  h+=ownLine(kw);
  h+=tiles([["Searches / day",r.demand?n0(spd(r.demand)):"–","",TIP.demand],["Small apps earn",m.attainable?.attainable_usd!=null?"$"+n0(m.attainable.attainable_usd):"–","/mo",TIP.attainable],
   ["Difficulty",n0(r.difficulty),diffWord(r.difficulty),TIP.difficulty],["Open spots in top 10",r.weak_spots==null?"–":Math.round(r.weak_spots),r.weak_spots==null?"":"/ 10",TIP.weak_spots+(m.weak_spots?` Weakest top-10 app: ${n0(m.weak_spots.weakest_ratings)} ratings.`:"")]]);
@@ -562,9 +562,9 @@ async function loadOverview(){const o=await(await fetch("/api/overview")).json()
  const d=o.last_keyword_snapshot?new Date(o.last_keyword_snapshot+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}):"–";
  $("#asof").textContent=`US store · data ${d}${o.read_fallback?" · showing last saved copy (a job is writing)":""}`;
  const r=await(await fetch("/api/keywords?entity=topic&limit=5000&min_popularity=5&include_excluded=false")).json();
- const nb=r.filter(x=>x.meta?.opp_score?.action==="Build now").length,nw=r.filter(x=>x.meta?.opp_score?.action==="Watch").length;
+ const nb=r.filter(x=>x.meta?.opp_score?.action==="Build now").length,nw=r.filter(x=>x.meta?.opp_score?.action==="Maybe").length;
  $("#headline").textContent=`${nb.toLocaleString()} app ideas to build now`;
- $("#subline").innerHTML=`Out of ${r.length.toLocaleString()} ideas. ${nw.toLocaleString()} more are worth watching. Built from ${(o.keywords||0).toLocaleString()} App Store searches${info("Keywords tracked: Apple's popular list plus long-tail and research terms. Ideas = similar searches grouped together. Build now = grade A or B.")}`;
+ $("#subline").innerHTML=`Out of ${r.length.toLocaleString()} ideas. ${nw.toLocaleString()} more are a maybe. Built from ${(o.keywords||0).toLocaleString()} App Store searches${info("Keywords tracked: Apple's popular list plus long-tail and research terms. Ideas = similar searches grouped together. Build now = grade A: the niche’s mid-pack apps earn $5k+/month, 2+ young apps already do, ~17+ searches/day, and we can build it.")}`;
  $("#jobs").innerHTML="<tr><th>job</th><th>started</th><th>rows</th><th>ok</th><th>error</th></tr>"+o.jobs.map(j=>`<tr><td>${esc(j.job)}</td><td>${esc(j.started_at)}</td><td class="num">${n0(j.rows)}</td><td>${j.ok?"✓":"✕"}</td><td class="muted">${esc((j.error||"").slice(0,80))}</td></tr>`).join("")}
 
 const clearOwn=()=>{ownSel=null;$("#ownchips").querySelectorAll(".chip").forEach(x=>x.classList.remove("on"))};

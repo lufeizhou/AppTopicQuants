@@ -87,27 +87,48 @@ class DeepSeekClient:
                 out[it["term"]] = float(it.get("p_brand", 0.5))
         return out
 
-    LABELS = ("need", "brand", "vague", "rubbish")
+    LABELS = ("need", "brand", "rubbish")
 
     def label_keywords(self, items: list[dict]) -> dict[str, dict]:
-        """items: [{term, top_apps:[names]}] -> term -> {label, p_brand, reason}.
-        need = a generic job a new app could do; brand = looking for one specific app/company/game/show/store/person;
-        vague = an everyday word that names no app need on its own; rubbish = gibberish, typo noise, adult or illegal."""
-        sys = ("You label US App Store search terms. Each term comes with the names of the top apps Apple shows for it. "
-               "Labels: 'need' = a generic job or feature any new app could serve (e.g. 'habit tracker', 'pdf scanner', "
-               "'ai video generator', 'fasting', 'white noise'); 'brand' = the user wants one specific existing app, company, "
-               "store, game, franchise, show, sports league or person, including nicknames, abbreviations and misspellings "
-               "(e.g. 'me@walmart', 'toca boca', 'cai' when the top app is Character AI, 'ff max'); 'vague' = a common word "
-               "or phrase that names no app need by itself (e.g. 'real', 'wonder', 'treat', 'five star', 'd'); 'rubbish' = "
-               "gibberish, keyboard noise, adult or illegal content. If the top apps are all one brand and the term is "
-               "its name or part of it, it is 'brand'. p_brand in [0,1] = probability the term is navigational. "
-               "reason: at most 8 words. Respond as JSON: {\"items\": [{\"term\": str, \"label\": str, \"p_brand\": float, \"reason\": str}]}")
+        """items: [{term, top_apps:[names]}] -> term -> {label, specificity, p_brand, reason}.
+        label = type: need (any app could serve it) / brand (one specific app, company, game, show, person) / rubbish.
+        specificity 1-5 for needs: how precisely the term names one app a new developer could build (see config
+        [step1.labels]); None for brand and rubbish."""
+        sys = ("You label US App Store search terms. Each term comes with the names of the top apps Apple shows for it "
+               "(the list may be empty when the results page has not been fetched).\n"
+               "type:\n"
+               "- 'need' = the user wants ANY app that does a job, feature or topic (e.g. 'habit tracker', 'pdf scanner', "
+               "'white noise', 'fasting', 'timer', 'compass', even a vague word like 'real');\n"
+               "- 'brand' = the user wants one specific existing app, company, store, game, franchise, show, sports league or "
+               "person, including nicknames, abbreviations and misspellings (e.g. 'me@walmart', 'toca boca', 'ff max', 'cai' "
+               "when the top app is Character AI). If the top apps are all one brand and the term is its name or part of it, "
+               "it is 'brand'. A generic word that happens to be an app's name ('notes', 'calculator') is still a 'need';\n"
+               "- 'rubbish' = gibberish, keyboard noise, adult or illegal content.\n"
+               "specificity (needs only, integer 1-5): how precisely the term names ONE app a small developer could build:\n"
+               "5 = a specific job with a qualifier, audience or format ('hiit timer', 'baby sleep tracker', 'receipt scanner "
+               "for taxes', 'ai calorie counter');\n"
+               "4 = one clear job or feature ('timer widget', 'habit tracker', 'pdf scanner', 'white noise', 'mood journal');\n"
+               "3 = a real but broad need that spans several kinds of app ('timer', 'budget', 'journal', 'workout');\n"
+               "2 = a whole category or generic tool word ('compass', 'photos', 'learning', 'kids games', 'sleep');\n"
+               "1 = an everyday word or phrase that names no app need by itself ('real', 'wonder', 'treat', 'five star', 'd').\n"
+               "For brand and rubbish, specificity = null. p_brand in [0,1] = probability the term is navigational (looking "
+               "for one app). reason: at most 8 words.\n"
+               "Respond as JSON: {\"items\": [{\"term\": str, \"label\": str, \"specificity\": int|null, \"p_brand\": float, \"reason\": str}]}")
         data = self.json_chat(sys, json.dumps(items, ensure_ascii=False), temperature=0.0)
         out = {}
         for it in data.get("items", []):
             lab = str(it.get("label", "")).lower()
-            out[str(it.get("term", "")).lower()] = {"label": lab if lab in self.LABELS else "vague",
-                                                    "p_brand": float(it.get("p_brand", 0.5)), "reason": str(it.get("reason", ""))[:120]}
+            lab = {"vague": "need", "broad": "need"}.get(lab, lab)
+            lab = lab if lab in self.LABELS else "need"
+            sp = it.get("specificity")
+            try:
+                sp = max(1, min(5, int(sp))) if sp is not None and lab == "need" else None
+            except (TypeError, ValueError):
+                sp = None
+            if lab == "need" and sp is None:
+                sp = 3
+            out[str(it.get("term", "")).lower()] = {"label": lab, "specificity": sp, "p_brand": float(it.get("p_brand") or 0.5),
+                                                    "reason": str(it.get("reason", ""))[:120]}
         return out
 
     def expand_topic(self, topic: str, n: int = 80) -> list[dict]:
@@ -174,6 +195,32 @@ class DeepSeekClient:
             for items in ex.map(one, [keywords[i:i + 50] for i in range(0, len(keywords), 50)]):
                 for it in items:
                     out[str(it.get("term", "")).lower()] = {"score": float(it.get("score", 0.5)), "reason": it.get("reason", "")}
+        return out
+
+    def brand_check(self, items: list[dict]) -> dict[str, dict]:
+        """items: {term, apps: top result names} -> term -> {p_brand, kind, reason}. Second pass for searches that
+        name a company, product line, device or app (vizio tv app, mosaique+) and so are not an open need."""
+        sys = ("You check App Store search terms that were labelled as generic needs. For each, using the top apps it returns, "
+               "give p_brand in [0,1]: the probability the term looks for one specific existing app, game or company "
+               "(navigational: e.g. 'minecraft building guide', 'mosaique+', 'premier league fantasy football', 'magic sort'), "
+               "versus an open need any new app could serve ('tv remote', 'hiit timer', 'ai photo generator'). A brand used as a "
+               "platform word ('iphone', 'android', 'apple watch') is NOT a brand, and neither is a third-party utility for a "
+               "brand's device ('vizio tv remote', 'tcl remote', 'chromecast remote', 'lg tv app'): those are needs. "
+               "kind: one of company, device, app, franchise, none. Respond as JSON: "
+               "{\"items\": [{\"term\": str, \"p_brand\": float, \"kind\": str, \"reason\": str}]}")
+        from concurrent.futures import ThreadPoolExecutor
+        out: dict[str, dict] = {}
+
+        def one(chunk):
+            try:
+                return self.json_chat(sys, json.dumps(chunk, ensure_ascii=False)).get("items", [])
+            except Exception:
+                return []
+        with ThreadPoolExecutor(8) as ex:
+            for res in ex.map(one, [items[i:i + 40] for i in range(0, len(items), 40)]):
+                for it in res:
+                    out[str(it.get("term", "")).lower()] = {"p_brand": float(it.get("p_brand", 0) or 0), "kind": it.get("kind") or "none",
+                                                            "reason": it.get("reason", "")}
         return out
 
     def pain_points(self, keyword: str, reviews: list[dict]) -> dict:

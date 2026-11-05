@@ -8,7 +8,7 @@ import logging
 
 from .. import budget
 from ..config import settings
-from ..db import snapshot_copy
+from ..db import snapshot_copy, today
 from ..sources.appleads import AppleAdsClient
 from ..sources.asc import ASCClient
 from ..sources.astro import AstroClient
@@ -143,3 +143,19 @@ def run_light(con, store: str = settings.store, top: int = 1500) -> dict:
     out = {"charts": n_charts, "band_apps_refreshed": n_apps, "read_copy": str(snapshot_copy(con))}
     log.info("light run: %s", out)
     return out
+
+
+def run_expand(store: str = settings.store) -> dict:
+    """Step 1 expansion after the weekly run (own connections: call it with no connection open). Sources and paid
+    pilots come from [step1.expand] weekly_sources / weekly_pilots. Needs Astro for popularity; skipped without it."""
+    from . import expand
+    cfg = settings.section("expand")
+    if not cfg.get("weekly", True):
+        return {"skipped": "weekly = false"}
+    if not astro_up():
+        log.warning("expansion skipped: Astro is not running (new terms need its popularity)")
+        return {"skipped": "astro not running"}
+    split = lambda s: tuple(x for x in str(s).split(",") if x)
+    since = today()                        # taken before collect: a run past midnight still finishes its own terms
+    found = expand.collect(store, split(cfg.get("weekly_sources", "titles,hints,play")), split(cfg.get("weekly_pilots", "")))
+    return {"collect": found, "finish": expand.finish(store, since=since)}

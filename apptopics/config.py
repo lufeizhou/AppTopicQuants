@@ -23,17 +23,37 @@ class Settings:
     deepseek_model: str = field(default_factory=lambda: _env("DEEPSEEK_MODEL", "deepseek-v4-flash"))
     db_path: Path = field(default_factory=lambda: ROOT / _env("APPTOPICS_DB", "data/apptopics.duckdb"))
     store: str = field(default_factory=lambda: _env("APPTOPICS_STORE", "us").lower())
-    weights_path: Path = field(default_factory=lambda: ROOT / "config" / "weights.toml")
+    weights_path: Path = field(default_factory=lambda: ROOT / "config" / "model.toml")
 
     _cache: tuple[float, dict] | None = None
 
     def weights(self) -> dict:
-        """config/weights.toml, cached by mtime (read many times per scoring run)."""
+        """config/model.toml flattened: [stepN.name] / [appendixB.name] / [run.name] -> name. Cached by mtime
+        (read many times per scoring run)."""
         m = self.weights_path.stat().st_mtime
         if self._cache is None or self._cache[0] != m:
             with open(self.weights_path, "rb") as f:
-                self._cache = (m, tomllib.load(f))
+                self._cache = (m, flatten_model(tomllib.load(f)))
         return self._cache[1]
+
+    def section(self, name: str) -> dict:
+        return self.weights().get(name, {})
+
+
+def flatten_model(raw: dict) -> dict:
+    """Group tables ([step1.universe], [run.sources] ...) are lifted to their own name; a name may appear once."""
+    out: dict = {}
+    for k, v in raw.items():
+        if isinstance(v, dict) and (k.startswith(("step", "appendix")) or k == "run"):
+            for name, sec in v.items():
+                if name in out:
+                    raise ValueError(f"config/model.toml: section '{name}' defined twice")
+                out[name] = sec
+        else:
+            if k in out:
+                raise ValueError(f"config/model.toml: section '{k}' defined twice")
+            out[k] = v
+    return out
 
 
 settings = Settings()

@@ -156,7 +156,7 @@ def anchor_rows(con, store: str = "us") -> list[dict]:
 
 def fit_knots(rows: list[dict], grid=(0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256), window: float = 0.4, min_n: int = 30) -> tuple[list, list]:
     """Running median of monthly revenue around each ratings-per-month knot (log window +-`window` decades),
-    kept only where >= min_n anchors fall in the window, made monotone. This is how config/weights.toml was built."""
+    kept only where >= min_n anchors fall in the window, made monotone. This is how config/model.toml was built."""
     xs, ys = [], []
     for k in grid:
         sub = [r["usd"] for r in rows if abs(math.log10(r["rpm"]) - math.log10(k)) <= window]
@@ -261,7 +261,7 @@ def holdout(rows: list[dict], target: float, splits: int = 20, test_share: float
 
 def calibrate(con, store: str = "us", apply: bool = False) -> dict:
     """The honest report: in-sample fit of the curve and of a direct logistic P(>= target), hold-out scores of both,
-    and (with apply) the refitted curve written to weights.toml. The logistic model is reported, not used: on hold-out it
+    and (with apply) the refitted curve written to model.toml. The logistic model is reported, not used: on hold-out it
     ranks no better than the curve (AUC 0.74 vs 0.73 on 2026-11-04) and its probabilities are flatter."""
     from ..metrics.sector import rpm_to_usd
     target = float(settings.weights().get("target", {}).get("monthly_usd", 5000))
@@ -285,7 +285,7 @@ def calibrate(con, store: str = "us", apply: bool = False) -> dict:
 
 
 def apply_calibration(knots: tuple[list, list], sigma: float, path: Path | None = None) -> list[str]:
-    """Write the refitted curve into config/weights.toml [monetization]; returns the lines written."""
+    """Write the refitted curve into config/model.toml [monetization]; returns the lines written."""
     p = path or settings.weights_path
     text = p.read_text(); changed = []
     for key, val in (("rpm_knots", knots[0]), ("usd_knots", knots[1]), ("est_sigma_log10", sigma)):

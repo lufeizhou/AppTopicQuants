@@ -92,7 +92,7 @@ def build_market(topic: str, aspects: list[dict], term_aspect: dict[str, str], a
         sec = sector_estimates(con, store, today())
         F: dict[str, dict] = {}
         for e, m, v, mt in con.execute("""SELECT entity_id, metric, value, meta FROM factor_values WHERE entity_type='keyword'
-                AND metric IN ('demand','weak_spots','opp_score','attainable','difficulty') AND entity_id IN (SELECT unnest(?))
+                AND metric IN ('demand','weak_spots','opp_score','attainable','difficulty','buildability') AND entity_id IN (SELECT unnest(?))
                 QUALIFY row_number() OVER (PARTITION BY entity_id, metric ORDER BY snapshot_date DESC)=1""", [terms]).fetchall():
             F.setdefault(e, {})[m] = (v, json.loads(mt) if mt else {})
         ids = {a.app_id for t in terms for a in sec.get(t, [])}
@@ -141,6 +141,8 @@ def build_market(topic: str, aspects: list[dict], term_aspect: dict[str, str], a
                          "earners_1k": len(earners), "small_apps_earn": bands[len(bands) // 2] if bands else None,
                          "best_search": best, "best_grade": F[best]["opp_score"][1].get("grade") if best else None,
                          "best_score": round(F[best]["opp_score"][0]) if best else None,
+                         "build": max((F[t]["buildability"][0] for t in ts if F.get(t, {}).get("buildability")), default=None),
+                         "n_a": sum(1 for t in ts if F.get(t, {}).get("opp_score") and F[t]["opp_score"][1].get("grade") == "A"),
                          "top_apps": [{"app_id": s["app_id"], "name": s["name"], "est": round(s["est"]), "ratings": s["rc"]} for s in top]})
             for s in seen.values():
                 g = apps.setdefault(s["app_id"], {**s, "aspects": []})

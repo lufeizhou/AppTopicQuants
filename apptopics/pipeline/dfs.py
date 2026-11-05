@@ -28,7 +28,7 @@ def _need_keywords(store: str, order_by_opp: bool = True, limit: int | None = No
         rows = con.execute("""
             SELECT l.keyword, coalesce(o.value, 0) FROM keyword_labels l
             LEFT JOIN factor_values o ON o.entity_id=l.keyword AND o.metric='opp_score' AND o.entity_type='keyword' AND o.snapshot_date=?
-            WHERE l.store=? AND l.label IN ('need','broad') ORDER BY 2 DESC""", [d, store]).fetchall()
+            WHERE l.store=? AND l.label='need' AND coalesce(l.specificity, 3) >= 2 ORDER BY 2 DESC""", [d, store]).fetchall()
     finally:
         con.close()
     import re
@@ -148,7 +148,7 @@ def play_pain_points(store: str = settings.store, grades: tuple[str, ...] = ("A"
         d = con.execute("SELECT max(snapshot_date) FROM factor_values WHERE metric='opp_score' AND entity_type='keyword'").fetchone()[0]
         niches = [k for k, m in con.execute("SELECT entity_id, meta FROM factor_values WHERE metric='opp_score' AND entity_type='keyword' "
                                             "AND snapshot_date=? ORDER BY value DESC", [d]).fetchall()
-                  if json.loads(m).get("grade") in grades and json.loads(m).get("action") != "Avoid"]
+                  if json.loads(m).get("grade") in grades and json.loads(m).get("action") != "No"]
         pk = {}
         for kw, pkg in con.execute("""SELECT keyword, package FROM play_search WHERE country=? AND rank<=? AND package IS NOT NULL
                 AND snapshot_date=(SELECT max(snapshot_date) FROM play_search p2 WHERE p2.country=play_search.country AND p2.keyword=play_search.keyword)

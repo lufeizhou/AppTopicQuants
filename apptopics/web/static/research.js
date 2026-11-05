@@ -67,7 +67,7 @@ function verdictCard(r,m){const v=m.verdict;const av=m.aspect_verdicts||[];
  const best=av.find(a=>a.aspect===v.best_aspect)||av[0];
  const reasons=(v.reasons||[]).map(x=>`<li><b>${esc(x.title)}</b> <span class="why">${esc(x.detail)}</span> ${seclink(x.section||"",secIdOf(x.section))}</li>`).join("");
  const risks=(v.risks||[]).map(x=>`<li><b>${esc(x.title)}</b> <span class="why">${esc(x.detail)}</span></li>`).join("");
- const how=best?`<details class="how"><summary>How the grade ${v.grade} is built</summary><div class="why" style="margin:6px 0 8px">The grade is the verdict of the best proven aspect, <b>${esc(best.aspect)}</b> (${best.score} points): five parts, each 0–1, weighted. Unproven aspects (nobody serves them yet) do not set the grade but count as upside.</div>
+ const how=best?`<details class="how"><summary>How the grade ${v.grade} is built</summary><div class="why" style="margin:6px 0 8px">The grade is the best aspect’s grade, <b>${esc(best.aspect)}</b>: ${esc(best.grade_why||"")}. <b>A</b> = its apps earn $5k+/month, 2+ young apps earn $5k+, ~17+ searches/day and it is buildable; <b>B</b> = money exists but a check fails; <b>?</b> = not sure (nobody serves it yet); <b>C</b> = no money or hard to build. The 0–100 points (${best.score}) only order aspects inside a grade.</div>
    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${stk(best.parts,best.weights,260)}<b>${best.score}</b> ${lgd(best.weights)}</div>
    <div class="why" style="margin-top:8px">Grades: A ≥ 80 · B ≥ 65 · C ≥ 50 · D ≥ 35 · E below. ${esc(best.why||"")}</div></details>`:"";
  return`<section class="card vwrap"><div class="vcard">
@@ -162,7 +162,7 @@ function kwBody(x){const items=(x.build_now&&x.build_now.length?x.build_now:x.to
 function conclusions(r,x,m){const C=m.competitors||[],V=m.voice||{},S=m.social||{},R=m.reddit||{},ads=(m.ads||[]).filter(a=>a.active_ads),P=m.prices||{},F=m.features||[];
  const views=a=>((a.tiktok||{}).views||0)+((a.youtube||{}).views||0);const totV=(S.aspects||[]).reduce((s,a)=>s+views(a),0),totS=(m.aspects||[]).reduce((s,a)=>s+(a.searches_day||0),0);
  const young=C.filter(c=>c.age_months!=null&&c.age_months<=24&&(c.est||0)>=5000);const pains=[...(V.pains||[])].sort((a,b)=>(b.strength||0)-(a.strength||0));const unmet=(V.wishes||[]).filter(w=>w.unmet);
- const low=[...F].sort((a,b)=>a.coverage-b.coverage).slice(0,3);const per=P.periods||{},sug=P.suggested||{};const items=x.top_opportunities||[];const abc=items.filter(i=>"ABC".includes(i.opp_grade||"")).length;
+ const low=[...F].sort((a,b)=>a.coverage-b.coverage).slice(0,3);const per=P.periods||{},sug=P.suggested||{};const items=x.top_opportunities||[];const abc=items.filter(i=>i.opp_grade==="A").length,bb=items.filter(i=>i.opp_grade==="B").length;
  const subs=[...new Set((R.aspects||[]).flatMap(a=>(a.top_subreddits||[]).map(s=>s.subreddit)))].slice(0,3);
  return{pos:(m.highlights||[]).length?`${m.highlights.map(o=>esc(o.name)).join(" · ")}. ${esc(m.highlights[0].one_liner||"")}`:"",
   voice:pains.length?`${pains.slice(0,2).map(p=>`${esc(p.pain)} (${(p.strength||0).toFixed(1)})`).join("; ")}.${unmet.length?` ${unmet.length} unmet wish${unmet.length>1?"es":""}: ${unmet.slice(0,2).map(w=>esc(w.wish)).join(", ")}.`:""}`:"",
@@ -172,7 +172,7 @@ function conclusions(r,x,m){const C=m.competitors||[],V=m.voice||{},S=m.social||
   prices:`${per.month?`Median $${per.month.median.toFixed(2)}/month`:""}${per.year?` and $${per.year.median.toFixed(2)}/year`:""}${per.week&&per.week.share>=.2?`; ${pc(per.week.share)} sell a weekly plan`:""}. Suggested ${sug.monthly?`$${sug.monthly.toFixed(2)}`:"–"} / ${sug.yearly?`$${sug.yearly.toFixed(2)}`:"–"}.`,
   features:low.length?`White space: ${low.map(f=>`${esc(f.name)} ${pc(f.coverage)}`).join(", ")}.`:"",
   comp:`${young.length} app${young.length!==1?"s":""} under 2 years old earn $5k+${C[0]?` · top earner ${esc(C[0].name.split(":")[0])} ${usdk(C[0].est)}`:""}.`,
-  kw:`${x.found} real searches: ${abc} graded A–C on search alone${(x.unproven||[]).length?`, ${x.unproven.length} too thin to judge`:""}, the rest D/E${(x.top_aso||[]).length?` · best ASO target “${esc(x.top_aso[0].keyword)}”`:""}.`}}
+  kw:`${x.found} real searches: ${abc} graded A (can earn), ${bb} B (maybe)${(x.unproven||[]).length?`, ${x.unproven.length} too thin to judge`:""}, the rest C${(x.top_aso||[]).length?` · best ASO target “${esc(x.top_aso[0].keyword)}”`:""}.`}}
 
 function renderReport(r){const x=r.result||{},m=x.market||{};const c=conclusions(r,x,m);const V=m.voice,S=m.social,R=m.reddit,A=m.ads||[],P=m.prices,F=m.features||[],C=m.competitors||[];
  let h=verdictCard(r,m);if((m.aspects||[]).length)h+=aspectCard(m);

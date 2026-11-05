@@ -197,7 +197,7 @@ def backtest_cmd(horizon: int = 28):
 
 @app.command("calibrate-anchors")
 def calibrate_anchors(refresh: bool = False, holdout: bool = typer.Option(False, "--holdout", help="honest test: refit on 2/3 of the anchors, score the other 1/3"),
-                      apply: bool = typer.Option(False, "--apply", help="write the refitted curve into config/weights.toml")):
+                      apply: bool = typer.Option(False, "--apply", help="write the refitted curve into config/model.toml")):
     """Fit the revenue estimator on verified-revenue apps (TrustMRR + MobileMRR caches) and print the error report."""
     import json as _j
 
@@ -258,6 +258,8 @@ def run_weekly(store: str = S):
         try:
             with connect() as con:
                 res = run_full(con, store)
+            from .pipeline.weekly import run_expand  # Step 1 expansion opens its own connections
+            res = {"run": res, "expand": run_expand(store)}
             st.write_text(_j.dumps({"state": "done", "started_at": _j.loads(st.read_text())["started_at"],
                                     "finished_at": _dt.datetime.now().isoformat(timespec="seconds"),
                                     "last_full_run": _dt.datetime.now().isoformat(timespec="seconds"), "result": str(res)[:2000]}))
@@ -413,12 +415,52 @@ def c_asc(days: int = 90):
         typer.echo(collect_asc(con, days))
 
 
+# ---------------------------------------------------------------- expand (step 1: new searches)
+expand_cli = typer.Typer(help="Step 1: find searches we do not track yet (autocomplete, Play, competitor titles, pilots).")
+app.add_typer(expand_cli, name="expand")
+
+
+@expand_cli.command("collect")
+def e_collect(store: str = S, sources: str = typer.Option("hints,play,titles", help="free sources: hints,play,titles"),
+              pilots: str = typer.Option("", help="paid pilots: dfs_play_app,reddit ($1-2 each)"),
+              seeds: int = typer.Option(None, help="limit seeds (testing)"),
+              alpha_grades: str = typer.Option(None, help="grades whose seeds get 'seed a..z' hints (default: config)")):
+    """Collect new search candidates into the universe (see [step1.expand] in config/model.toml). Alphabet seeds and DFS
+    apps expanded within redo_after_days are skipped (data/cache/expand_done.json)."""
+    from .pipeline.expand import collect as _collect
+    typer.echo(_collect(store, tuple(s for s in sources.split(",") if s), tuple(p for p in pilots.split(",") if p), seeds,
+                        alpha_grades))
+
+
+@expand_cli.command("finish")
+def e_finish(store: str = S, since: str = typer.Option(None, help="YYYY-MM-DD, default today"), no_rescore: bool = False,
+             no_attach: bool = False, max_per_source: int = typer.Option(None, help="measure a random sample per source")):
+    """Label, measure, fetch pages for, rescore and attach to topics the terms `expand collect` added."""
+    import datetime as _dt
+
+    from .pipeline.expand import finish as _finish
+    typer.echo(_finish(store, _dt.date.fromisoformat(since) if since else None, not no_rescore, not no_attach, max_per_source))
+
+
+@expand_cli.command("brand-check")
+def e_brand_check(store: str = S, grades: str = "AB", redo: bool = False, rescore: bool = True):
+    """Second label pass: graded needs that name a company, device, franchise or app become 'brand'."""
+    from .pipeline.expand import brand_check
+    out = brand_check(store, tuple(grades), redo)
+    typer.echo({k: v for k, v in out.items() if k != "brands"} | {"n_brands": len(out["brands"]), "sample": out["brands"][:40]})
+    if rescore and out["brands"]:
+        from .pipeline.discover import write_retry
+        from .pipeline.score import score_all
+        typer.echo(write_retry(lambda c: score_all(c, store)).get("index"))
+
+
 # ---------------------------------------------------------------- llm
 @llm.command("labels")
-def l_labels(store: str = S, relabel: bool = False, workers: int = 8):
-    """Label ALL universe keywords need/brand/vague/rubbish (brand+rubbish are hidden from the ranking and paid fetches)."""
+def l_labels(store: str = S, relabel: bool = False, workers: int = 8,
+             scope: str = typer.Option("new", help="new | context (string-only labels that now have a page) | pages | all")):
+    """Label universe keywords: type need/brand/rubbish + specificity 1-5 (brand+rubbish are hidden from the ranking and paid fetches)."""
     from .pipeline.collect import collect_llm_labels
-    typer.echo(collect_llm_labels(store, relabel, workers))
+    typer.echo(collect_llm_labels(store, relabel, workers, scope=scope))
 
 
 @llm.command("brands")
@@ -431,7 +473,7 @@ def l_brands(top: int = 1500, store: str = S):
 
 @llm.command("buildability")
 def l_build(top: int = 1500, store: str = S):
-    """Score top-N keywords for buildability under [constraints] in config/weights.toml."""
+    """Score top-N keywords for buildability under [constraints] in config/model.toml."""
     from .pipeline.collect import collect_llm_buildability, selected
     with connect() as con:
         typer.echo(collect_llm_buildability(con, selected(con, store, top), store))

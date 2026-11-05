@@ -25,7 +25,7 @@ So the model asks:
         │
  5. Filters         drop brands, games, thin or winner-take-all markets
         │
- 6. Score + grade   opp_score 0-100 → grade A-E → action (Build now / Watch / Avoid)
+ 6. Score + grade   opp_score 0-100 (order) + evidence checks → grade A / B / ? / C (Build now / Maybe / Not sure / No)
         │
  7. Topics          group searches into app ideas; the dashboard ranks ideas
         │
@@ -41,7 +41,12 @@ Each step below says what goes in, what comes out, and what happens to `timer wi
 ### Step 1. Universe: which searches we look at
 
 **In:** Apple Ads API popularity list (top 500 terms per genre, weekly, 8,303 terms) + App Store
-autocomplete and DeepSeek variants of real needs (~12,600 long-tail terms) + anything a research run finds.
+autocomplete and DeepSeek variants of real needs (~12,600 long-tail terms) + **expansion** (weekly, `[step1.expand]`):
+App Store and Google Play autocomplete of graded needs (A–D; `seed a..z` for A), phrases shared by ≥ 3 competitor
+titles, Reddit "is there an app" posts, DataForSEO Play keywords of competitor apps (25 new apps per week, ≤ $1) +
+anything a research run finds. Every find keeps its source (`expand_finds`, plus the autocomplete letter), so each
+source's yield can be judged. A source is kept while > 10% of its terms that reach a results page (popularity ≥ 15)
+grade C or better (2026-11-05: titles 31%, App Store autocomplete 35%, DataForSEO 30%, Reddit 52%, Play 23%).
 **Out:** one row per search string, with popularity 1-100 (Apple, or Astro for the long tail).
 
 A search is our "ticker". It is always a concrete string (`timer widget`), never a category.
@@ -49,8 +54,26 @@ A search is our "ticker". It is always a concrete string (`timer widget`), never
 > `timer widget`: popularity 35. Popularity converts to searches per day (40 ≈ 70/day, ×1.15 per
 > point), so 35 ≈ **35 searches/day**.
 
-DeepSeek labels every search as **need**, **broad**, **vague**, **brand** or **rubbish**. Brand and rubbish
-are dropped later.
+New terms are scored on **App Store popularity only** (Astro); results pages are fetched for needs with popularity
+≥ 15 (`fetch_min_popularity`). Popularity vs Google volume (7,085 needs, 2026-11-04): ×1.105 per point overall,
+×1.13 on Apple-list needs, close to the ×1.15 rule.
+
+DeepSeek labels every search with a **type**, need, **brand** or **rubbish**, and for needs a **specificity** 1–5,
+seeing the top 3 apps of its results page when one exists:
+
+| s | meaning | example | score × |
+|---|---|---|---|
+| 5 | one clear job with a qualifier | hiit timer | 1.0 |
+| 4 | a clear job | timer widget | 1.0 |
+| 3 | broad but real | timer | 0.8 |
+| 2 | very broad | chat | 0.65 |
+| 1 | vague | best | 0.5 |
+
+Multipliers `specificity_mults` (`[step1.labels]`) are anchored: a clear job keeps its full score and only broad or
+vague searches are cut, because the grade cutoffs below were set on the unmultiplied scale (a linear 0.5–1.0 rule
+dropped 146 solid Build-now searches such as `room design` to Watch). A second pass (`expand brand-check`) relabels graded needs that name one specific app, game or company as brand;
+third-party utilities for a brand's device (`vizio tv remote`) stay needs. Brand and rubbish are dropped later; brand/rubbish
+searches get no results page.
 
 ### Step 2. Sector: who competes for it
 
@@ -59,7 +82,7 @@ are dropped later.
 description). Apple pads vague searches with unrelated big apps; those are removed.
 
 A sector needs **≥ 30 relevant apps**, otherwise the p5-p20 band is just the 2-3 leaders. Fewer than 30 →
-grade **?** "Unproven" (no market to judge yet, which is different from a bad market).
+grade **?, "not sure"** (no market to judge yet, which is different from a bad market).
 
 ### Step 3. Revenue: what each app earns
 
@@ -93,7 +116,7 @@ of the 487 anchors, score the other third, 20 random splits.
 Read: the **probabilities are honest, the point estimates miss most winners** (ad-grown apps earn with few
 ratings). That is why the market numbers below use P(≥ $5k), not "estimate ≥ $5k". A logistic model on ratings,
 age and price was tried as an alternative; it ranks no better (AUC 0.74), so the curve stays. `--apply` writes a
-refitted curve into `config/weights.toml`.
+refitted curve into `config/model.toml`.
 
 Known biases: apps grown by paid ads are underestimated; free/ad-only apps are overestimated, because all
 anchors are apps that charge.
@@ -118,7 +141,7 @@ anchors are apps that charge.
 
 ### Step 5. Filters: what we never show
 
-Hidden, with the reason kept (all in `config/weights.toml [filters]`):
+Hidden, with the reason kept (all in `config/model.toml [filters]`):
 
 - **Hard:** label brand or rubbish · games · non-Latin script · gambling, lending, VPN · buildability < 0.3 ·
   thin sector (< 30 apps) · data coverage < 50%.
@@ -152,18 +175,24 @@ the other parts. The exponents say money matters most, then reach, then demand.
 
 100 × 0.34^0.45 × 0.67^0.35 × 0.49^0.20 × 0.86 = **40 → grade B**.
 
-**Grades:** A ≥ 50 (about the top 2% of visible niches), B ≥ 38, C ≥ 28, D ≥ 18, else E. Labels `broad`
-(compass, chat) ×0.7, `vague` ×0.5.
+The score (× the Step 1 specificity multiplier: s1 ×0.5, s2 ×0.65, s3 ×0.8, s4–s5 ×1.0) only **orders**
+searches. The **grade** is three evidence checks (decided 2026-11-05, `[step6.grades]`), not score cut-offs:
 
-**Actions:**
-- **Build now**: grade A/B, visible, buildability judged ≥ 0.6.
-- **Watch**: grade C; or A/B with buildability not judged or low; or good numbers hidden for a soft reason.
-- **Avoid**: the rest. **Unproven** (?): sector too thin. **No data** (?): results page never fetched
-  (fetched once popularity reaches 20 or research finds it).
+| Grade | Action | Rule |
+|---|---|---|
+| **A**, can earn | Build now | all four: p5–p20 apps earn ≥ $5k/month · ≥ 2 apps under 2 years old earn $5k+ · popularity ≥ 30 (~17 searches/day) · judged buildable (≥ 0.6) |
+| **B**, maybe | Maybe | money exists (band ≥ $1k or a young winner) but a check fails (or buildability not judged yet) |
+| **?**, not sure | Not sure | the market cannot be measured: sector too thin, popularity not measured, nobody serves it yet |
+| **C**, no | No | no money signal, judged hard to build, or brand / rubbish / games |
+| **–** | No data | results page never fetched |
 
-> `timer widget` → **B, Build now**. Reason shown: "easy to enter (55) · fits our constraints | but ~1
-> young app already earns $5k+, p5-p20 apps earn ~$3,576/mo". Read: you can get in, but the band sits
-> below target, so a B and not an A.
+A dominant leader is shown in the reason, not a gate (young winners already prove newcomers earn). Every A
+candidate gets a buildability judgement (`expand.judge_buildability`).
+
+> `ai dance generator` → **A, Build now** (75.6): "18 young apps earn $5k+ · p5-p20 apps earn ~$21,705/mo ·
+> popularity 56 (~655/day) · buildable 0.70".
+> `timer widget` → **B, Maybe** (40.3): "missing: p5-p20 apps earn ~$3,637/mo · 1 young app earns $5k+ |
+> has: popularity 35 (~35/day) · buildable 1.00". Read: easy and wanted, but the money is not proven.
 
 A second, smaller score answers a different question: **aso_score**, should an *existing* app target this
 search? `100 × demand^0.5 × ease^0.5`, ease from weak spots. Target now / Later / Skip.
@@ -179,15 +208,15 @@ topic score = 0.75 × best member + 0.25 × mean of top 3
               × 0.9-1.0 for total traffic (5/day → 0.9, 1,000+/day → 1.0)
 ```
 
-> Topic **Timer** = `timer widget` (B, 40.2) + `timer plus` (B, 38.3) + `timer` (D, 21.0), plus
-> `timer no ads simple` attached as hidden (thin sector, not scored).
-> 0.75 × 40.2 + 0.25 × mean(40.2, 38.3, 21.0) + 2 × log2(1 + 2) = 30.2 + 8.3 + 3.2 = **41.6 → B, Build
-> now**; traffic ~1,101 searches/day, so ×1.0.
+> Topic **Timer** (2026-11-05): 4 searches; best member `timer` is **A** (6 young apps earn $5k+, p5-p20
+> ~$5,499/mo, popularity 59, buildable 0.95), so the topic is **A, Build now**. Score 42.9 (0.75 × best +
+> 0.25 × top-3 mean + 2 × log2(1 + A/B members), × traffic) orders it among the A topics.
 
-Build now for a topic needs grade A/B *and* a Build-now best member. The topic shows its best member's
-numbers. Hidden searches (brands, games…) are attached to topics for context but never count in the score.
+A topic's grade is its **best member's grade** (one A search is a way in); the score orders topics inside a
+grade. A topic whose searches are all hidden is C, or ? when they are only too thin to judge. The topic shows its
+best member's numbers. Hidden searches (brands, games…) are attached to topics for context but never count in the score.
 
-Current run: **192 topics Build now** (60 A, 132 B), 364 Watch.
+Current run (2026-11-05): **347 topics A** (Build now), 1,148 B, 230 ?, 8,915 C.
 
 ### Step 8. Research on demand
 
@@ -214,7 +243,9 @@ store for yet grades D/E on keywords even when young apps earn in it. One grade 
 | someone pays for ads | 15% | 3 competitors with active Meta ads |
 | white space | 10% | 3 unmet wishes users voice |
 
-A ≥ 80, B ≥ 65, C ≥ 50, D ≥ 35. The overall grade is the best proven aspect's; DeepSeek writes the call,
+The 0–100 aspect score orders aspects. The aspect **grade** uses the same checks as a search: the median band of
+its searches ≥ $5k, ≥ 2 young winners, its searches/day summed ≥ ~17, its best judged search buildable; an
+aspect nobody serves yet is ? ("not sure"). The overall grade is the best aspect's; DeepSeek writes the call,
 risks and next step. Every search found joins the universe, so the weekly run keeps tracking it.
 
 ### Step 9. Checking the model
@@ -283,7 +314,7 @@ the reach claim directly: does a search with 3+ open spots give your app a page-
 ## Appendix B. The composite (older score)
 
 Before opp_score, the ranking was a **composite**: ~25 factors z-scored across the universe, clipped at ±3,
-weighted (`config/weights.toml [composite]`, breadth and attainable 2.0, brandness -1.5, difficulty -1.0…)
+weighted (`config/model.toml [composite]`, breadth and attainable 2.0, brandness -1.5, difficulty -1.0…)
 and summed, with revenue upside multiplied by reach. It is still computed and drives the *coverage* filter
 and the raw-factor tab, but the dashboard ranks by opp_score.
 

@@ -29,14 +29,25 @@ from .research import _save, load_run
 
 log = logging.getLogger(__name__)
 
-WEIGHTS = {"opening": 0.30, "people_care": 0.25, "newcomers_win": 0.20, "someone_pays": 0.15, "white_space": 0.10}
+_V = settings.section("verdict")   # config/model.toml [step8.verdict]
+WEIGHTS = {k: float(_V.get(k, d)) for k, d in (("opening", 0.30), ("people_care", 0.25), ("newcomers_win", 0.20),
+                                               ("someone_pays", 0.15), ("white_space", 0.10))}
 LABELS = {"opening": "Opening", "people_care": "People care", "newcomers_win": "Newcomers win", "someone_pays": "Someone pays ads", "white_space": "White space"}
-OPENING = {"Emerging": 1.0, "Empty": 0.7, "Crowded": 0.35, "Saturated": 0.1}
+OPENING = {"Emerging": float(_V.get("band_emerging", 1.0)), "Empty": float(_V.get("band_empty", 0.7)),
+           "Crowded": float(_V.get("band_crowded", 0.35)), "Saturated": float(_V.get("band_saturated", 0.1))}
 TARGET = float(settings.weights().get("target", {}).get("monthly_usd", 5000))
 
 
-def _grade(score: float) -> str:
-    return "A" if score >= 80 else "B" if score >= 65 else "C" if score >= 50 else "D" if score >= 35 else "E"
+ORDER = {"A": 0, "B": 1, "?": 2, "C": 3}
+
+
+def _aspect_grade(row: dict, n_young: int, unproven: bool) -> tuple[str, dict, str]:
+    """Same evidence checks as a search (index.earn_grade, decided 2026-11-05): money = median p5-p20 band of the
+    aspect's searches, newcomers = young apps earning $5k+, traffic = the aspect's searches/day summed, build = its
+    best judged search. The 0-100 aspect score only orders aspects inside a grade."""
+    from .index import earn_grade, popularity_for
+    return earn_grade(row.get("small_apps_earn"), n_young, popularity_for(row.get("searches_day")), row.get("build"),
+                      unknown="no app serves it yet (unproven)" if unproven else None)
 
 
 def _views(m: dict) -> dict[str, dict]:
@@ -61,15 +72,16 @@ def aspect_verdicts(run: dict) -> list[dict]:
     for row in m.get("aspects") or []:
         name = row["aspect"]
         mine = [c for c in comps if name in (c.get("aspects") or [])]
-        young = [c for c in mine if c.get("age_months") is not None and c["age_months"] <= 24 and (c.get("est") or 0) >= TARGET]
+        young = [c for c in mine if c.get("age_months") is not None and c["age_months"] <= _V.get("young_months", 24) and (c.get("est") or 0) >= TARGET]
         paying = [c for c in mine if c["app_id"] in ads]
         unmet = [w for w in wishes if w.get("unmet") and (w.get("aspect") or "") == name]
         v = views.get(name, {})
         parts = {"opening": OPENING.get(row.get("band"), 0.5),
-                 "people_care": max(0.0, min(1.0, (math.log10(max(v.get("views", 0), 1)) - 4) / 3)) if v else None,
-                 "newcomers_win": min(1.0, len(young) / 4),
-                 "someone_pays": min(1.0, len(paying) / 3) if m.get("ads") is not None else None,
-                 "white_space": min(1.0, len(unmet) / 3)}
+                 "people_care": max(0.0, min(1.0, (math.log10(max(v.get("views", 0), 1)) - _V.get("views_zero_log", 4))
+                                             / (_V.get("views_full_log", 7) - _V.get("views_zero_log", 4)))) if v else None,
+                 "newcomers_win": min(1.0, len(young) / _V.get("young_full", 4)),
+                 "someone_pays": min(1.0, len(paying) / _V.get("advertisers_full", 3)) if m.get("ads") is not None else None,
+                 "white_space": min(1.0, len(unmet) / _V.get("wishes_full", 3))}
         known = {k: p for k, p in parts.items() if p is not None}
         wsum = sum(WEIGHTS[k] for k in known) or 1.0
         score = round(100 * sum(WEIGHTS[k] * known[k] for k in known) / wsum)
@@ -84,22 +96,23 @@ def aspect_verdicts(run: dict) -> list[dict]:
             why.append(f"{len(paying)} competitor{'s' if len(paying) > 1 else ''} pay for ads")
         if unmet:
             why.append(f"{len(unmet)} unmet wish{'es' if len(unmet) > 1 else ''}")
-        out.append({"aspect": name, "score": score, "grade": _grade(score), "unproven": unproven, "parts": parts, "weights": WEIGHTS,
+        grade, checks, grade_why = _aspect_grade(row, len(young), unproven)
+        out.append({"aspect": name, "score": score, "grade": grade, "checks": checks, "grade_why": grade_why, "unproven": unproven, "parts": parts, "weights": WEIGHTS,
                     "evidence": {"band": row.get("band"), "views": v.get("views"), "videos": v.get("videos"), "searches_day": row.get("searches_day"),
                                  "young_winners": [{"name": c["name"], "est": c.get("est"), "age_months": c.get("age_months")} for c in sorted(young, key=lambda c: -(c.get("est") or 0))[:5]],
                                  "advertisers": [{"name": c["name"], "days": ads[c["app_id"]].get("oldest_active_days")} for c in paying],
                                  "unmet": [w.get("wish") for w in unmet[:4]], "small_apps_earn": row.get("small_apps_earn"),
                                  "best_search": row.get("best_search"), "best_grade": row.get("best_grade")},
                     "why": " · ".join(w for w in why if w)})
-    out.sort(key=lambda a: -a["score"])
+    out.sort(key=lambda a: (ORDER.get(a["grade"], 3), -a["score"]))
     return out
 
 
 def overall_verdict(run: dict, aspects: list[dict], ds) -> dict:
-    """DeepSeek words the call from the facts; the grade is the best proven aspect's grade (unproven aspects are skipped)."""
+    """DeepSeek words the call from the facts; the grade is the best aspect's grade (A can earn / B maybe / C no)."""
     m, topic = run["result"]["market"], run["topic"]
-    best = next((a for a in aspects if not a["unproven"]), aspects[0] if aspects else None)
-    grade = best["grade"] if best else "E"
+    best = aspects[0] if aspects else None          # sorted best grade first, then score
+    grade = best["grade"] if best else "C"
     res = run["result"]
     kw = [{k: i.get(k) for k in ("keyword", "opp_grade", "opp_action", "searches_day", "band_usd", "p5k")} for i in (res.get("top_opportunities") or [])[:8]]
     ctx = {"topic": topic, "our_app": run.get("app") or "", "overall_grade": grade,
@@ -122,7 +135,7 @@ def overall_verdict(run: dict, aspects: list[dict], ds) -> dict:
         except Exception as e:
             log.warning("verdict attempt %d failed: %s", attempt + 1, e)
     return {"grade": grade, "best_aspect": best["aspect"] if best else None, "computed_at": dt.datetime.now().isoformat(timespec="seconds"),
-            "how": "grade = best aspect's verdict (unproven aspects skipped); the words are DeepSeek's reading of the facts below", **words}
+            "how": "grade = best aspect's grade: A when its apps earn $5k+, 2+ young apps earn $5k+, ~17+ searches/day and it is buildable; B when money exists but a check fails; ? when nobody serves it yet (not sure); C otherwise. The words are DeepSeek's reading of the facts below", **words}
 
 
 def write_keyword_social(run: dict) -> int:
@@ -157,20 +170,24 @@ def refresh_scores(run: dict, store: str = settings.store) -> None:
     direction = {k: i.get("direction") for k, i in old.items()}
     items = score_items(terms, pop, direction, store)
     by = {i["keyword"]: i for i in items}
-    by_opp = sorted([i for i in items if i["opp"]], key=lambda i: -i["opp"])
+    by_opp = sorted([i for i in items if i["opp"]], key=lambda i: ({"A": 0, "B": 1, "?": 2}.get(i.get("opp_grade"), 3), -i["opp"]))   # grade first, score inside
     res["build_now"] = [i for i in by_opp if i["opp_action"] == "Build now"][:20]
     res["top_opportunities"] = by_opp[:40]
     res["top_aso"] = sorted([i for i in items if i["aso"] and i["aso_action"] != "Skip"], key=lambda i: -i["aso"])[:40]
-    res["unproven"] = sorted([i for i in items if i["opp_action"] == "Unproven"], key=lambda i: -(i["popularity"] or 0))[:40]
+    res["unproven"] = sorted([i for i in items if (i.get("opp_reason") or "").startswith("not sure: too few")], key=lambda i: -(i["popularity"] or 0))[:40]
     for c in res.get("clusters", []):
         mem = [by[k] for k in c.get("keywords", []) if k in by]
         if mem:
             best = max(mem, key=lambda i: (i["opp"] or 0))
             c.update({"best_keyword": best["keyword"], "best_opp": best["opp"], "best_grade": best["opp_grade"]})
+    ta = (res.get("market") or {}).get("term_aspect") or {}
     for row in (res.get("market") or {}).get("aspects") or []:
         b = row.get("best_search")
         if b in by:
             row["best_grade"], row["best_score"] = by[b]["opp_grade"], round(by[b]["opp"] or 0)
+        mine = [by[k] for k, a in ta.items() if a == row["aspect"] and k in by]   # aspect grade inputs (build, A searches)
+        row["build"] = max((i["buildability"] for i in mine if i.get("buildability") is not None), default=None)
+        row["n_a"] = sum(1 for i in mine if i.get("opp_grade") == "A")
     res["rescored_at"] = dt.datetime.now().isoformat(timespec="seconds")
 
 
@@ -198,7 +215,7 @@ def finalize(run_id: str, store: str = settings.store, rescore: bool = True) -> 
         from .reddit_voice import _highlights
         _highlights(run, ds)
     m["aspect_verdicts"] = aspect_verdicts(run)
-    m["verdict"] = overall_verdict(run, m["aspect_verdicts"], ds) if ds.available else {"grade": m["aspect_verdicts"][0]["grade"] if m["aspect_verdicts"] else "E"}
+    m["verdict"] = overall_verdict(run, m["aspect_verdicts"], ds) if ds.available else {"grade": m["aspect_verdicts"][0]["grade"] if m["aspect_verdicts"] else "C"}
     if ds.available:
         write_retry(lambda c: budget.record(c, "deepseek", "verdict", ds.usage_in + ds.usage_out, ds.cost_usd(), run["topic"]), tries=3, wait=1)
     run["log"] = (run.get("log") or []) + [f"{dt.datetime.now():%H:%M:%S} verdict: {m['verdict'].get('grade')} · {n} keywords with social evidence"]
