@@ -14,6 +14,7 @@ dependencies = [
   "numpy>=1.26",
   "openai>=1.30",
   "play-store-scraper-ng>=0.1.9",
+  "typesafe-sdk>=0.7.5",
 ]
 
 [project.optional-dependencies]

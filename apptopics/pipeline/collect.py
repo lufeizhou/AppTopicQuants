@@ -242,6 +242,8 @@ def _llm_job(con, name: str, store: str, n_items: int, fn):
             return 0
         n = fn(ds)
         budget.record(con, "deepseek", name, ds.usage_in + ds.usage_out, ds.cost_usd(), f"{n_items} items")
+        from .judges import record_jev
+        record_jev(con)
         return n
     return _job(con, name, store, run)
 
@@ -288,6 +290,7 @@ def collect_llm_labels(store: str = settings.store, relabel: bool = False, worke
     try:
         kws = [k for (k,) in con.execute("SELECT keyword FROM keywords WHERE store=? AND snapshot_date=(SELECT max(snapshot_date) FROM keywords WHERE store=?) ORDER BY popularity DESC", [store, store]).fetchall()]
         labelled = {k: ctx for k, ctx in con.execute("SELECT keyword, context FROM keyword_labels WHERE store=?", [store]).fetchall()}
+        manual = {k for (k,) in con.execute("SELECT keyword FROM keyword_labels WHERE store=? AND model='manual'", [store]).fetchall()}
         tops: dict[str, list[str]] = {}
         for kw, name in con.execute("""SELECT keyword, name FROM search_results WHERE store=? AND rank<=3
                 QUALIFY dense_rank() OVER (PARTITION BY keyword ORDER BY snapshot_date DESC)=1 ORDER BY keyword, rank""", [store]).fetchall():
@@ -302,6 +305,7 @@ def collect_llm_labels(store: str = settings.store, relabel: bool = False, worke
         want = [k for k in kws if k not in labelled or (k in tops and labelled[k] != "top_apps")]
     else:
         want = [k for k in kws if k not in labelled]
+    want = [k for k in want if k not in manual]      # manual labels (e.g. adult-intent review) are never overwritten
     # a cached v2 answer is reused only if it was made with the same context (page or no page)
     todo = [k for k in want if not (k in cache and cache[k].get("context") == ("top_apps" if k in tops else "string"))]
     est = budget.estimate_job("deepseek", "llm_labels", len(todo))
@@ -314,7 +318,8 @@ def collect_llm_labels(store: str = settings.store, relabel: bool = False, worke
 
     def run(batch):
         try:
-            res = ds.label_keywords([{"term": k, "top_apps": tops.get(k, [])} for k in batch])
+            from .judges import label_keywords
+            res = label_keywords([{"term": k, "top_apps": tops.get(k, [])} for k in batch], ds)
         except Exception as e:
             log.warning("label batch failed: %r", e)
             return 0
@@ -337,17 +342,316 @@ def collect_llm_labels(store: str = settings.store, relabel: bool = False, worke
         upsert(wcon, "keyword_labels", rows)
         upsert(wcon, "factor_values", _factor_rows("llm_brand", {r["keyword"]: r["p_brand"] for r in rows}))
         budget.record(wcon, "deepseek", "llm_labels", ds.usage_in + ds.usage_out, ds.cost_usd(), f"{len(todo)} keywords")
+        from .judges import record_jev
+        record_jev(wcon)
     write_retry(_w)
     from collections import Counter
     return {"labeled": len(rows), "new": len(todo), "usd": round(ds.cost_usd(), 4), "labels": dict(Counter(r["label"] for r in rows)),
             "specificity": dict(sorted(Counter(r["specificity"] for r in rows if r["label"] == "need").items()))}
 
 
+def collect_llm_relevance(store: str = settings.store, keywords: list[str] | None = None, workers: int = 8,
+                          redo: bool = False, con=None) -> dict:
+    """Step 2 (2026-11-06): DeepSeek decides which apps on each results page really serve the search (app names only,
+    thinking off; ~$0.0003 a page). Only (search, app) pairs without an answer are sent, so a weekly run pays for new
+    apps only. Answers go to data/cache/llm_relevance.jsonl as they arrive (a crash resumes), then to app_relevance.
+    relevance.py uses them in place of the word rule. Pass `con` when the caller already holds the write connection
+    (weekly run); otherwise it reads a live copy and writes in short retried transactions."""
+    import json
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from ..db import connect_read_live
+    from ..sources.deepseek import DeepSeekClient
+    from .discover import write_retry
+
+    ds = DeepSeekClient()
+    if not ds.available:
+        raise RuntimeError("DEEPSEEK_API_KEY not set")
+    cache_p = settings.db_path.parent / "cache" / "llm_relevance.jsonl"
+    cache_p.parent.mkdir(parents=True, exist_ok=True)
+    cached: dict[tuple[str, str], bool] = {}
+    if cache_p.exists() and not redo:
+        for line in cache_p.read_text().splitlines():
+            if line.strip():
+                r = json.loads(line); cached[(r["k"], r["a"])] = bool(r["r"])
+    own = con is None
+    rcon = connect_read_live() if own else con
+    write = write_retry if own else (lambda fn: fn(con))
+    try:
+        pages: dict[str, list[tuple[str, str]]] = {}
+        for kw, app, name in rcon.execute("""SELECT keyword, app_id, coalesce(name, '') FROM search_results WHERE store=?
+                QUALIFY dense_rank() OVER (PARTITION BY keyword ORDER BY snapshot_date DESC)=1 ORDER BY keyword, rank""", [store]).fetchall():
+            pages.setdefault(kw, []).append((app, name))
+        try:
+            done = set() if redo else {(k, a) for k, a in rcon.execute("SELECT keyword, app_id FROM app_relevance WHERE store=?", [store]).fetchall()}
+        except Exception:   # table created by the first write connection
+            done = set()
+    finally:
+        if own:
+            rcon.close()
+    if keywords is not None:
+        pages = {k: v for k, v in pages.items() if k in set(keywords)}
+    # only apps without an answer are sent; a partly judged page adds Apple's top 10 names as context (2026-11-06:
+    # sending whole pages again for a few new apps was most of the cost)
+    new_apps = {k: [(a, n) for a, n in apps if (k, a) not in done and (k, a) not in cached] for k, apps in pages.items()}
+    todo = [k for k, v in new_apps.items() if v]
+    est = budget.estimate_job("deepseek", "llm_relevance", 0) + budget.estimate_job("deepseek", "llm_relevance", 1) * sum(len(new_apps[k]) for k in todo) / 175
+    log.info("llm relevance: %d pages to judge (est $%.2f), %d answers cached", len(todo), est, len(cached))
+    if todo and not write(lambda c: budget.guard(c, "deepseek", "llm_relevance", len(todo))):
+        return {"skipped": "budget", "pages": len(todo), "est_usd": round(est, 2)}
+    lock = threading.Lock()
+
+    def run(kw):
+        apps = new_apps[kw]
+        ctx = None if len(apps) == len(pages[kw]) else [n for _, n in pages[kw][:10]]
+        try:
+            ans = {}
+            for i in range(0, len(apps), 100):
+                chunk = apps[i:i + 100]
+                no = ds.competitors(kw, [n for _, n in chunk], ctx)
+                ans.update({a: j not in no for j, (a, _) in enumerate(chunk)})
+        except Exception as e:
+            log.warning("relevance %r failed: %r", kw, e)
+            return 0
+        with lock, cache_p.open("a") as f:
+            for a, r in ans.items():
+                cached[(kw, a)] = r
+                f.write(json.dumps({"k": kw, "a": a, "r": int(r)}) + "\n")
+        return 1
+    n_ok = 0
+    with ThreadPoolExecutor(workers) as ex:
+        for i, ok in enumerate(ex.map(run, todo), 1):
+            n_ok += ok
+            if i % 500 == 0:
+                log.info("llm relevance: %d/%d pages ($%.2f so far)", i, len(todo), ds.cost_usd())
+    now = dt.datetime.now()
+    want = {(k, a) for k, apps in pages.items() for a, _ in apps}
+    rows = [{"store": store, "keyword": k, "app_id": a, "relevant": r, "model": ds.model, "judged_at": now}
+            for (k, a), r in cached.items() if (k, a) in want and (redo or (k, a) not in done)]
+
+    def _w(wcon):
+        for i in range(0, len(rows), 200_000):
+            upsert(wcon, "app_relevance", rows[i:i + 200_000])
+        budget.record(wcon, "deepseek", "llm_relevance", ds.usage_in + ds.usage_out, ds.cost_usd(), f"{len(todo)} pages")
+    write(_w)
+    return {"pages": len(todo), "judged": n_ok, "rows": len(rows), "usd": round(ds.cost_usd(), 3),
+            "kept_share": round(sum(r["relevant"] for r in rows) / max(len(rows), 1), 3)}
+
+
+def collect_jev_relevance(store: str = settings.store, keywords: list[str] | None = None, workers: int = 16, con=None) -> dict:
+    """Step 2 base judge (2026-11-06): TypeSafe Jev gives, for every app on every results page, the probability that
+    someone who typed the search treats it as a real option (name + 120 characters of description, Apple's top 10 as
+    context). Stored as app_relevance.p_jev; relevance.py keeps the app when p >= JEV_THRESHOLD unless a manual or
+    Sonnet answer exists. Only apps without a Jev answer are sent (weekly runs: new apps only). Cached in
+    data/cache/jev_relevance.jsonl as answers arrive, so a crash resumes."""
+    import json
+    import os
+    import tempfile
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from ..db import connect_read_live
+    from ..sources.jev import JevClient
+    from .discover import write_retry
+
+    jv = JevClient()
+    if not jv.available:
+        log.info("jev relevance: TYPESAFE_API_KEY not set, skipped")
+        return {"skipped": "no key"}
+    cache_p = settings.db_path.parent / "cache" / "jev_relevance.jsonl"
+    cache_p.parent.mkdir(parents=True, exist_ok=True)
+    cached: dict[tuple[str, str], float] = {}
+    if cache_p.exists():
+        for line in cache_p.read_text().splitlines():
+            if line.strip():
+                r = json.loads(line); cached[(r["k"], r["a"])] = float(r["p"])
+    own = con is None
+    rcon = connect_read_live() if own else con
+    write = write_retry if own else (lambda fn: fn(con))
+    try:
+        pages: dict[str, list[tuple[str, str]]] = {}
+        for kw, app, name in rcon.execute("""SELECT keyword, app_id, coalesce(name, '') FROM search_results WHERE store=?
+                QUALIFY dense_rank() OVER (PARTITION BY keyword ORDER BY snapshot_date DESC)=1 ORDER BY keyword, rank""", [store]).fetchall():
+            pages.setdefault(kw, []).append((app, name))
+        try:
+            done = {(k, a) for k, a in rcon.execute("SELECT keyword, app_id FROM app_relevance WHERE store=? AND p_jev IS NOT NULL", [store]).fetchall()}
+        except Exception:   # column created by the first write connection
+            done = set()
+        if keywords is not None:
+            pages = {k: v for k, v in pages.items() if k in set(keywords)}
+        todo = {k: [(a, n) for a, n in apps if (k, a) not in done and (k, a) not in cached] for k, apps in pages.items()}
+        todo = {k: v for k, v in todo.items() if v}
+        ids = list({a for v in todo.values() for a, _ in v})
+        desc = dict(rcon.execute("""SELECT app_id, left(description, 120) FROM apps WHERE store=? AND app_id IN (SELECT unnest(?))
+                QUALIFY row_number() OVER (PARTITION BY app_id ORDER BY snapshot_date DESC)=1""", [store, ids]).fetchall()) if ids else {}
+    finally:
+        if own:
+            rcon.close()
+    n_pairs = sum(len(v) for v in todo.values())
+    est = budget.estimate_job("jev", "relevance", n_pairs)
+    log.info("jev relevance: %d apps on %d pages to judge (est $%.2f), %d cached", n_pairs, len(todo), est, len(cached))
+    if todo and not write(lambda c: budget.guard(c, "jev", "relevance", n_pairs)):
+        return {"skipped": "budget", "pairs": n_pairs, "est_usd": round(est, 2)}
+    lock = threading.Lock()
+
+    def run(kw):
+        apps = todo[kw]
+        try:
+            p = jv.competitors(kw, [(n, (desc.get(a) or "").replace("\n", " ")) for a, n in apps], [n for _, n in pages[kw][:10]])
+        except Exception as e:
+            log.warning("jev relevance %r failed: %r", kw, e)
+            return 0
+        with lock, cache_p.open("a") as f:
+            for i, (a, _) in enumerate(apps):
+                if i in p:
+                    cached[(kw, a)] = p[i]
+                    f.write(json.dumps({"k": kw, "a": a, "p": round(p[i], 4)}) + "\n")
+        return 1
+    n_ok = 0
+    with ThreadPoolExecutor(workers) as ex:
+        for i, ok in enumerate(ex.map(run, list(todo)), 1):
+            n_ok += ok
+            if i % 1000 == 0:
+                log.info("jev relevance: %d/%d pages ($%.3f so far)", i, len(todo), jv.cost_usd())
+    rows = [{"k": k, "a": a, "p": p} for (k, a), p in cached.items() if (k, a) not in done]
+
+    def _w(wcon):
+        fd, path = tempfile.mkstemp(suffix=".jsonl")
+        try:
+            with os.fdopen(fd, "w") as f:
+                for r in rows:
+                    f.write(json.dumps(r) + "\n")
+            # pairs judged by Jev but never by DeepSeek get a row too (relevant = NULL)
+            wcon.execute(f"""INSERT INTO app_relevance (store, keyword, app_id, model, judged_at)
+                SELECT ?, x.k, x.a, 'jev', now() FROM read_json('{path}', format='newline_delimited',
+                       columns={{'k':'VARCHAR','a':'VARCHAR','p':'DOUBLE'}}) x
+                WHERE NOT EXISTS (SELECT 1 FROM app_relevance r WHERE r.store=? AND r.keyword=x.k AND r.app_id=x.a)""", [store, store])
+            wcon.execute(f"""UPDATE app_relevance SET p_jev = x.p FROM read_json('{path}', format='newline_delimited',
+                             columns={{'k':'VARCHAR','a':'VARCHAR','p':'DOUBLE'}}) x
+                             WHERE app_relevance.store=? AND app_relevance.keyword=x.k AND app_relevance.app_id=x.a""", [store])
+        finally:
+            os.unlink(path)
+        budget.record(wcon, "jev", "relevance", jv.usage_in, jv.cost_usd(), f"{n_ok} pages, {jv.calls} calls")
+    if rows:
+        write(_w)
+    return {"pages": len(todo), "judged": n_ok, "pairs": n_pairs, "calls": jv.calls, "input_tokens": jv.usage_in,
+            "usd": round(jv.cost_usd(), 3), "kept_share": round(sum(r["p"] >= 0.5 for r in rows) / max(len(rows), 1), 3)}
+
+
+def collect_llm_relevance_desc(store: str = settings.store, workers: int = 10, offpeak_only: bool = False, con=None) -> dict:
+    """Step 2 hybrid (2026-11-06): for (search, app) pairs where the word rule and DeepSeek's names-only answer
+    disagree (~28%), ask DeepSeek again with 150 characters of each app's description (+ Apple's top 10 names as
+    context; thinking off). relevance.py lets this answer decide those pairs. Only pairs without an answer are sent.
+    offpeak_only: do not start at DeepSeek's peak price and stop sending pages when peak begins.
+    NOT run by default (user, 2026-11-06: keep names only); manual via `apptopics llm relevance-desc`. With no
+    description answers stored, relevance() gives exactly the names-only result."""
+    import json
+    import os
+    import tempfile
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from ..db import connect_read_live
+    from ..metrics.base import ensure_sr_latest
+    from ..metrics.relevance import patterns, relevance, threshold
+    from ..sources.deepseek import DeepSeekClient
+    from .discover import write_retry
+
+    if offpeak_only and budget.deepseek_peak():
+        return {"skipped": "peak price now", "note": budget.deepseek_offpeak_note()}
+    ds = DeepSeekClient()
+    if not ds.available:
+        raise RuntimeError("DEEPSEEK_API_KEY not set")
+    cache_p = settings.db_path.parent / "cache" / "llm_relevance_desc.jsonl"
+    cache_p.parent.mkdir(parents=True, exist_ok=True)
+    cached: dict[tuple[str, str], bool] = {}
+    if cache_p.exists():
+        for line in cache_p.read_text().splitlines():
+            if line.strip():
+                r = json.loads(line); cached[(r["k"], r["a"])] = bool(r["r"])
+    own = con is None
+    rcon = connect_read_live() if own else con
+    write = write_retry if own else (lambda fn: fn(con))
+    try:
+        ensure_sr_latest(rcon)
+        sd = rcon.execute("SELECT max(snapshot_date) FROM sr_latest WHERE store=?", [store]).fetchone()[0]
+        share = relevance(rcon, store, sd, use_llm=False)
+        judged = rcon.execute("SELECT keyword, app_id, relevant, relevant_desc FROM app_relevance WHERE store=?", [store]).fetchall()
+        todo: dict[str, list[str]] = {}
+        for k, a, r, rd in judged:
+            if rd is None and (k, a) not in cached and (k, a) in share and bool(r) != (share[(k, a)] >= threshold(len(patterns(k)))):
+                todo.setdefault(k, []).append(a)
+        ids = list({a for v in todo.values() for a in v})
+        names = dict(rcon.execute("SELECT app_id, any_value(name) FROM sr_latest WHERE store=? GROUP BY app_id", [store]).fetchall())
+        desc = dict(rcon.execute("""SELECT app_id, left(description, 150) FROM apps WHERE store=? AND app_id IN (SELECT unnest(?))
+                QUALIFY row_number() OVER (PARTITION BY app_id ORDER BY snapshot_date DESC)=1""", [store, ids]).fetchall())
+        top: dict[str, list[str]] = {}
+        for k, n in rcon.execute("SELECT keyword, name FROM sr_latest WHERE store=? AND rank<=10 ORDER BY keyword, rank", [store]).fetchall():
+            if k in todo:
+                top.setdefault(k, []).append(n)
+    finally:
+        if own:
+            rcon.close()
+    n_pairs = sum(len(v) for v in todo.values())
+    est = budget.estimate_job("deepseek", "llm_relevance", 1) * n_pairs / 175 * 1.6   # descriptions ~1.6x the names-only tokens
+    log.info("llm relevance (descriptions): %d pairs on %d pages to judge (est $%.2f), %d cached", n_pairs, len(todo), est, len(cached))
+    if todo and not write(lambda c: budget.guard(c, "deepseek", "llm_relevance_desc", 0) and budget.check(c, "deepseek", est)[0]):
+        return {"skipped": "budget", "pairs": n_pairs, "est_usd": round(est, 2)}
+    lock = threading.Lock()
+    stop = threading.Event()
+
+    def run(kw):
+        if stop.is_set() or (offpeak_only and budget.deepseek_peak()):
+            stop.set()
+            return 0
+        apps = todo[kw]
+        try:
+            ans = {}
+            for i in range(0, len(apps), 80):
+                chunk = apps[i:i + 80]
+                lines = [f"{names.get(a, '')} — {(desc.get(a) or '').replace(chr(10), ' ')}" for a in chunk]
+                no = ds.competitors(kw, lines, top.get(kw))
+                ans.update({a: j not in no for j, a in enumerate(chunk)})
+        except Exception as e:
+            log.warning("relevance (desc) %r failed: %r", kw, e)
+            return 0
+        with lock, cache_p.open("a") as f:
+            for a, r in ans.items():
+                cached[(kw, a)] = r
+                f.write(json.dumps({"k": kw, "a": a, "r": int(r)}) + "\n")
+        return 1
+    n_ok = 0
+    with ThreadPoolExecutor(workers) as ex:
+        for i, ok in enumerate(ex.map(run, list(todo)), 1):
+            n_ok += ok
+            if i % 1000 == 0:
+                log.info("llm relevance (descriptions): %d/%d pages ($%.2f so far)", i, len(todo), ds.cost_usd())
+    rows = [{"k": k, "a": a, "r": r} for (k, a), r in cached.items()]
+
+    def _w(wcon):
+        fd, path = tempfile.mkstemp(suffix=".jsonl")
+        try:
+            with os.fdopen(fd, "w") as f:
+                for r in rows:
+                    f.write(json.dumps(r) + "\n")
+            wcon.execute(f"""UPDATE app_relevance SET relevant_desc = x.r::BOOLEAN FROM read_json('{path}', format='newline_delimited',
+                             columns={{'k':'VARCHAR','a':'VARCHAR','r':'INTEGER'}}) x
+                             WHERE app_relevance.store=? AND app_relevance.keyword=x.k AND app_relevance.app_id=x.a""", [store])
+        finally:
+            os.unlink(path)
+        budget.record(wcon, "deepseek", "llm_relevance_desc", ds.usage_in + ds.usage_out, ds.cost_usd(), f"{n_ok} pages")
+    write(_w)
+    return {"pages": len(todo), "judged": n_ok, "pairs": n_pairs, "stopped_at_peak": stop.is_set(), "usd": round(ds.cost_usd(), 3),
+            "kept_share": round(sum(r["r"] for r in rows) / max(len(rows), 1), 3)}
+
+
 def collect_llm_buildability(con, keywords: list[str], store: str = settings.store) -> int:
     constraints = settings.weights().get("constraints", {}).get("description", "")
 
     def fn(ds):
-        res = ds.buildability(keywords, constraints)
+        from .judges import buildability
+        res = buildability(keywords, constraints, ds)
         return upsert(con, "factor_values", _factor_rows("buildability", {k: v["score"] for k, v in res.items()},
                                                          {k: {"reason": v["reason"]} for k, v in res.items()}))
     return _llm_job(con, "llm_buildability", store, len(keywords), fn)

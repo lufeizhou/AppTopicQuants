@@ -121,6 +121,10 @@ exclude_terms = ["casino", "slots", "jackpot", "sweepstake", "betting", "sportsb
 # Keywords in non-Latin scripts (Arabic, Cyrillic, CJK, ...) are real US-store searches but not our market;
 # they are skipped when selecting keywords to research and excluded from the ranking. Set false to keep them.
 latin_only = true
+# Searches in Spanish, Portuguese, French, German, Italian, Turkish ('foto', 'traductor', 'juegos para niños') keep their
+# grade but are hidden by default ("Show hidden" lists them): building for them means a translated app. User, 2026-11-06.
+# Rule: metrics/language.py (non-English letters or a common non-English word).
+hide_other_language = true
 
 # ======================================================================= Step 6. Score, grade, action
 [step6.score]

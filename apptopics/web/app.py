@@ -120,7 +120,7 @@ def _table(con, store: str, entity: str) -> list[dict]:
 
 
 @app.get("/api/keywords")
-def keywords(store: str = settings.store, limit: int = Query(300, le=5000), max_brandness: float | None = None,
+def keywords(store: str = settings.store, limit: int = Query(300, le=20000), max_brandness: float | None = None,
              min_popularity: int = 5, q: str | None = None, include_excluded: bool = False, entity: str = "keyword"):
     con = _con()
     try:

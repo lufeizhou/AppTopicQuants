@@ -205,7 +205,7 @@ def opportunity_parts(f: dict, meta: dict) -> dict:
                    "concentration": conc, "buildability": b, "trending": tr, "google_growth": g}}
 
 
-HARD_HIDE = ("label:", "non-latin", "excluded term", "games", "buildability<", "thin sector", "coverage")
+HARD_HIDE = ("label:", "non-latin", "excluded term", "games", "buildability<", "thin sector", "coverage", "other language")
 
 
 def _phrase(m: str, f: dict, meta: dict) -> str | None:
@@ -258,7 +258,7 @@ def build_index(con, store: str, snapshot_date: dt.date | None = None) -> dict:
         hidden = bool(m.get("excluded"))
         why_hidden = m.get("excluded_reason") or ""
         # thin sector / low coverage are "hard" for the composite but mean "unknown", not "bad", for the index
-        hard_bad = hidden and any(h in why_hidden for h in HARD_HIDE if h not in ("thin sector", "coverage"))
+        hard_bad = hidden and any(h in why_hidden for h in HARD_HIDE if h not in ("thin sector", "coverage", "other language"))
         judged = m.get("label") not in ("brand", "rubbish") and not hard_bad
         unproven = judged and not parts                                   # no sector to measure
         nopage = unproven and f.get("difficulty") is None and f.get("intent") is None   # results page never fetched
@@ -286,6 +286,8 @@ def build_index(con, store: str, snapshot_date: dt.date | None = None) -> dict:
             grade, checks, reason = earn_grade(money, young, f.get("demand"), b)
             if hidden and why_hidden:
                 reason += f"  |  note: {why_hidden}"   # soft reasons (leader share, small band) are shown, not a gate
+            if (meta.get("attainable") or {}).get("read_as"):   # typo / other language: competitors found by Apple's word
+                reason += f"  |  note: read as '{meta['attainable']['read_as']}' (Apple's top results)"
         if grade != "-":
             action = ACTIONS[grade]
         out.append({"entity_type": "keyword", "entity_id": k, "metric": "opp_score", "value": score,

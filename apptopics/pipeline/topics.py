@@ -150,7 +150,7 @@ def cluster_universe(store: str = settings.store, batch: int = 120, workers: int
     return {"terms": len(terms), "topics": len(trows), "merged": n_merged, "cost_usd": round(cost, 3)}
 
 
-HIDE_KINDS = (("label:brand", "brand"), ("games", "games"), ("non-latin", "non-latin"), ("excluded term", "excluded term"),
+HIDE_KINDS = (("other language", "other language"), ("label:brand", "brand"), ("games", "games"), ("non-latin", "non-latin"), ("excluded term", "excluded term"),
               ("buildability<", "not buildable"), ("label:rubbish", "rubbish"), ("thin sector", "thin sector"), ("coverage", "thin sector"))
 
 
@@ -203,7 +203,11 @@ def build_topic_index(con, store: str = settings.store, snapshot_date: dt.date |
         order = GRADE_ORDER
         best = min(use, key=lambda k: (order.get(opp[k].get("grade"), 4), -(opp[k]["opp"] or 0)))
         # hidden-only topic: C (brand, games, rubbish) unless a member is only unknown (thin sector) -> ? "not sure"
-        grade = (("?" if any(opp[k].get("unknown") for k in use) else "C") if is_hidden else opp[best].get("grade") or "-")
+        other_lang_only = is_hidden and all("other language" in (opp[k].get("why") or "") for k in use)
+        if not is_hidden or other_lang_only:     # other-language topics keep their grade (soft hide)
+            grade = opp[best].get("grade") or "-"
+        else:
+            grade = "?" if any(opp[k].get("unknown") for k in use) else "C"
         if grade not in order:
             grade = "-"
         action = "No data" if grade == "-" else ACTIONS[grade]

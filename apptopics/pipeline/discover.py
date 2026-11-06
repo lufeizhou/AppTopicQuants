@@ -65,7 +65,8 @@ def label_terms(terms: list[str], store: str = settings.store) -> dict[str, dict
     if todo and ds.available:
         def one(chunk):
             try:
-                return ds.label_keywords([{"term": t, "top_apps": tops.get(t, [])} for t in chunk])
+                from .judges import label_keywords
+                return label_keywords([{"term": t, "top_apps": tops.get(t, [])} for t in chunk], ds)
             except Exception as e:
                 log.warning("label batch failed: %r", e)
                 return {}
@@ -73,11 +74,18 @@ def label_terms(terms: list[str], store: str = settings.store) -> dict[str, dict
             for r in ex.map(one, [todo[i:i + 40] for i in range(0, len(todo), 40)]):
                 new.update(r)
         now = dt.datetime.now()
-        write_retry(lambda c: upsert(c, "keyword_labels", [{"store": store, "keyword": k, "label": v["label"], "p_brand": v["p_brand"],
-                                                             "reason": v["reason"], "model": ds.model, "labeled_at": now,
-                                                             "specificity": v.get("specificity"),
-                                                             "context": "top_apps" if k in tops else "string"}
-                                                            for k, v in new.items()]))
+        rows = [{"store": store, "keyword": k, "label": v["label"], "p_brand": v["p_brand"], "reason": v["reason"], "model": ds.model,
+                 "labeled_at": now, "specificity": v.get("specificity"), "context": "top_apps" if k in tops else "string"}
+                for k, v in new.items()]
+
+        def _w(c):
+            from .. import budget
+            from .judges import record_jev
+            upsert(c, "keyword_labels", rows)
+            if ds.usage_in or ds.usage_out:   # this path recorded no spend before 2026-11-06
+                budget.record(c, "deepseek", "llm_labels", ds.usage_in + ds.usage_out, ds.cost_usd(), f"{len(todo)} new terms")
+            record_jev(c)
+        write_retry(_w)
     return {t: (have.get(t) or new.get(t) or {}) for t in terms}
 
 

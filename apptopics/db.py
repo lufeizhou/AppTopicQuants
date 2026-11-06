@@ -61,6 +61,22 @@ CREATE TABLE IF NOT EXISTS longtail_keywords (
   store TEXT, keyword TEXT, seed TEXT, source TEXT, hint_rank INTEGER, popularity INTEGER, discovered_at DATE,
   PRIMARY KEY (store, keyword));
 
+-- Step 2 (2026-11-06): does this app on the search's results page really serve it? DeepSeek, names only, thinking off.
+-- relevance.py uses it in place of the word rule; one answer per (search, app), so weekly runs only judge new apps.
+CREATE TABLE IF NOT EXISTS app_relevance (
+  store TEXT, keyword TEXT, app_id TEXT, relevant BOOLEAN, model TEXT, judged_at TIMESTAMP,
+  PRIMARY KEY (store, keyword, app_id));
+-- hybrid (2026-11-06): where the word rule and the names-only answer disagree, DeepSeek re-judges with 150 characters
+-- of description; this answer then decides (80% right on 200 hand-labelled pairs vs 75% names only, 76% word rule).
+ALTER TABLE app_relevance ADD COLUMN IF NOT EXISTS relevant_desc BOOLEAN;
+-- reviewed by hand (one-off review of grade-changing disagreements, 2026-11-06): wins over every other answer
+ALTER TABLE app_relevance ADD COLUMN IF NOT EXISTS relevant_manual BOOLEAN;
+-- one-off Sonnet review (2026-11-06) of the earning disputed apps (rule vs DeepSeek): below manual, above DeepSeek
+ALTER TABLE app_relevance ADD COLUMN IF NOT EXISTS relevant_sonnet BOOLEAN;
+-- TypeSafe Jev probability that the app is a real option (2026-11-06; 85% right on 200 random hand-labelled pairs at
+-- >= 0.5 vs 75% DeepSeek names). Below manual and Sonnet, above DeepSeek.
+ALTER TABLE app_relevance ADD COLUMN IF NOT EXISTS p_jev DOUBLE;
+
 CREATE TABLE IF NOT EXISTS keyword_labels (
   store TEXT, keyword TEXT, label TEXT, p_brand DOUBLE, reason TEXT, model TEXT, labeled_at TIMESTAMP,
   PRIMARY KEY (store, keyword));

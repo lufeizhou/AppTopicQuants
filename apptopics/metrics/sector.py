@@ -1,6 +1,6 @@
 """Sector economics for a small team.
 
-A keyword's *sector* is its full App Store results page (up to 100 apps). Every app
+A keyword's *sector* is the apps on its App Store results page (up to 200) that serve it (relevance.py). Every app
 gets an estimated monthly revenue (see estimate_app_revenue), then the sector is
 sorted by that estimate and we ask the questions that matter when you are not
 going to be #1:
@@ -33,7 +33,7 @@ from ..config import settings
 from ..registry import metrics
 from .base import FactorRow, Metric, latest_snapshot
 from .monetization import rank_to_revenue
-from .relevance import patterns, relevance, threshold
+from .relevance import JUDGED, READ_AS, patterns, relevance, threshold
 
 
 @dataclass
@@ -232,7 +232,7 @@ class Attainable(_SectorMetric):
         med = statistics.median(a.est for a in b)
         val = math.log10((med + 1) / target)
         return FactorRow(kw, round(val, 4), {"attainable_usd": round(med), "target_usd": target, "band_n": len(b),
-                         "band_examples": [a.name for a in b[:3]], "p_target": round(1 / (1 + math.exp(-2.5 * val)), 3),
+                         "band_examples": [a.name for a in b[:3]], "read_as": None if kw in JUDGED else READ_AS.get(kw), "competitors_by": "DeepSeek" if kw in JUDGED else "word rule", "p_target": round(1 / (1 + math.exp(-2.5 * val)), 3),
                          "calibrated": bool(settings.weights().get("monetization", {}).get("calibrated", False))})
 
 

@@ -26,4 +26,15 @@ def test_estimate_and_guard(con, tmp_path, monkeypatch):
     c = budget.load()
     assert c["caps"]["deepseek"] == 20 and c["caps"]["total"] == 50 and c["cadence"]["trends_every_days"] == 14
     plan = budget.plan(con, {("deepseek", "llm_votes"): 50, ("scrapecreators", "reddit_research"): 10})
-    assert plan[-1]["api"] == "total" and len(plan) == 3
+    assert plan[-1]["api"] == "total" and len(plan) == 4 and plan[-2]["job"] == "price now"   # + DeepSeek peak/off-peak line
+
+
+def test_deepseek_peak_hours_beijing():
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+    bj = ZoneInfo("Asia/Shanghai")
+    fri = lambda h: dt.datetime(2026, 11, 6, h, 30, tzinfo=bj)
+    assert [budget.deepseek_peak(fri(h)) for h in (8, 10, 13, 15, 19)] == [False, True, False, True, False]
+    assert not budget.deepseek_peak(dt.datetime(2026, 11, 7, 10, 30, tzinfo=bj))          # Saturday: off-peak all day
+    peak, off = budget.deepseek_usd_per_m(fri(10)), budget.deepseek_usd_per_m(fri(20))
+    assert abs(peak["out"] - 2 * off["out"]) < 1e-9 and peak["peak"] and not off["peak"]

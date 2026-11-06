@@ -20,7 +20,7 @@ class Settings:
     astro_mcp_url: str = field(default_factory=lambda: _env("ASTRO_MCP_URL", "http://127.0.0.1:8089/mcp"))
     deepseek_api_key: str = field(default_factory=lambda: _env("DEEPSEEK_API_KEY"))
     deepseek_base_url: str = field(default_factory=lambda: _env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
-    deepseek_model: str = field(default_factory=lambda: _env("DEEPSEEK_MODEL", "deepseek-v4-flash"))
+    deepseek_model: str = field(default_factory=lambda: _env("DEEPSEEK_MODEL", "deepseek-flash"))
     db_path: Path = field(default_factory=lambda: ROOT / _env("APPTOPICS_DB", "data/apptopics.duckdb"))
     store: str = field(default_factory=lambda: _env("APPTOPICS_STORE", "us").lower())
     weights_path: Path = field(default_factory=lambda: ROOT / "config" / "model.toml")

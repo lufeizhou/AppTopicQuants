@@ -58,6 +58,7 @@ def run_plan(con, store: str = settings.store) -> list[dict]:
     n = min(1500, con.execute("SELECT count(*) FROM keywords WHERE store=?", [store]).fetchone()[0] or 1500)
     counts[("deepseek", "llm_brands")] = n
     counts[("deepseek", "llm_buildability")] = n
+    counts[("deepseek", "llm_relevance")] = src.get("search_top", 1000)   # refreshed pages with new apps (upper bound)
     if _topics_due(con):
         counts[("deepseek", "topics")] = n
     if src.get("search_backend", "auto") in ("auto", "dataforseo"):
@@ -110,6 +111,8 @@ def run_full(con, store: str = settings.store, top: int = 300, play_top: int = 1
     if llm and DeepSeekClient().available:
         c.collect_llm_brands(con, c.selected(con, store, 1500, brand_filter=False), store)
         c.collect_llm_buildability(con, c.selected(con, store, 1500), store)
+        c.collect_jev_relevance(store, con=con)   # Step 2 base judge: Jev on new apps (fractions of a cent)
+        c.collect_llm_relevance(store, con=con)   # DeepSeek names answer: fallback layer (cents)
         if _topics_due(con):
             c.collect_topics(con, c.selected(con, store, 1500), store)
     first = score_all(con, store)

@@ -76,7 +76,7 @@ apptopics collect longtail | longtail-finish   # discover long-tail searches, th
 apptopics expand collect [--sources titles,hints,play] [--pilots reddit,dfs_play_app] [--alpha-grades A]   # find new searches
 apptopics expand finish --since YYYY-MM-DD   # label, popularity, result pages, buildability, rescore, attach to topics
 apptopics expand brand-check [--grades AB]    # relabel graded needs that name one specific app, game or company
-apptopics llm labels | buildability | pain-top | cluster | merge-topics | attach-hidden   # pain-top is manual only (not in the weekly run)
+apptopics llm labels | relevance-jev | relevance | buildability | pain-top | cluster | merge-topics | attach-hidden   # relevance = Step 2 judge (new apps only); pain-top is manual only
 apptopics dfs volume | trends | play | play-reviews   # DataForSEO: Google volume+CPC, Trends, Play rankings, Play reviews → pain points
 apptopics score | plan | budget show|set
 ```
@@ -88,7 +88,8 @@ apptopics score | plan | budget show|set
 | (none) | Apple charts, iTunes lookup/search, autocomplete, reviews, Google Play scraper | $0 |
 | `APPLE_ADS_*` | Apple's weekly search popularity (top 500 per genre): universe + trending | $0 |
 | Astro app running | popularity + difficulty for any term (long tail, research) | owned |
-| `DEEPSEEK_API_KEY` | keyword labels, buildability, topic expansion/clusters, pain points, metadata advice | cents per job |
+| `DEEPSEEK_API_KEY` | keyword labels, who competes per search (Step 2), buildability, topic expansion/clusters, pain points, metadata advice | cents per job; peak hours (weekdays 9–12, 14–18 Beijing) cost 2× |
+| `TYPESAFE_API_KEY` | TypeSafe Jev: who competes per search (Step 2) and the first pass of labels, brand check, buildability (DeepSeek only for unsure cases) | $0.042 per M input tokens (~$5 for all pages once) |
 | `DATAFORSEO_LOGIN/PASSWORD` | Google volume + CPC, Google Trends 5y + seasonality, Google Play rankings and reviews | ~$5 per full pass |
 | `TRUSTMRR_API_KEY` | verified revenue anchors for calibration (MobileMRR needs no key) | $0 |
 | `ASC_*` | your own apps' sales | $0 |

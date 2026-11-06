@@ -5,9 +5,10 @@
 # skipped, a warning is recorded (dashboard banner + macOS notification), and everything else runs.
 
 [caps]
-deepseek = 8.0
+deepseek = 15.0   # raised 2026-11-06 for the Step 2 relevance pass (user approved "all"); hybrid pass not run
 dataforseo = 30.0
 scrapecreators = 5.0
+jev = 10.0   # TypeSafe Jev (2026-11-06): $0.042 per M input tokens, output free
 total = 45.0
 
 [cadence]
@@ -17,8 +18,17 @@ keywords_every_days = 7    # Apple updates the popularity list weekly
 
 [unit_prices]
 # Used only for pre-run estimates; actual spend comes from the APIs' own usage/cost fields.
-deepseek_in_per_m = 0.14
-deepseek_out_per_m = 0.28
+# DeepSeek flash, CNY per million tokens at OFF-PEAK (peak = x deepseek_peak_mult). Peak = weekdays
+# deepseek_peak_hours, Beijing time; Saturday and Sunday are off-peak all day (DeepSeek, from 2026-08-23).
+# Prices from the 2026-09-10 list; checked 2026-11-06 against the account balance (CNY 86 spent that day).
+# The old flat 0.14 / 0.28 USD under-counted the Step 2 relevance pass ~2.4x ($4.26 recorded, ~$10 billed).
+deepseek_cny_miss = 1.00       # input, cache miss
+deepseek_cny_hit = 0.02        # input, cache hit (DeepSeek prefix cache)
+deepseek_cny_out = 4.00        # output (thinking tokens count as output)
+deepseek_peak_mult = 2.0
+deepseek_peak_hours = "09-12,14-18"
+cny_per_usd = 7.1
+jev_in_per_m = 0.042
 dataforseo_volume_task = 0.06        # up to 1,000 keywords
 dataforseo_trends_task = 0.011       # reference + 4 keywords, live
 scrapecreators_credit = 0.00188  # Reddit via ScrapeCreators, 1 credit per request

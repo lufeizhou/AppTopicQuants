@@ -97,6 +97,27 @@ and report the all-terms share beside it.
    Isolate by recomputing one entity from both databases and diffing its inputs.
 6. Spend: sum the `spend` table for the round, lost money included.
 
+### Choosing a judgement method (Step 2 lessons, 2026-11-06)
+
+When a step makes a yes/no call (does this app serve the search? is this a brand?), pick the method by a bake-off,
+not by taste:
+
+1. **Answer key:** one careful, expensive pass on a stratified sample (Step 2: DeepSeek with descriptions on 40
+   searches, ~7,100 pairs, $0.29). Cache every answer, so later candidates are scored for free.
+2. **Candidates:** the current rule, free local models, cheaper LLM settings, and small models trained on the key.
+   Fit any threshold or classifier with grouped cross-validation (whole searches held out), never on the test set.
+3. **Blind check:** the key favours methods that resemble it (an LLM key favours LLM methods). Label ~120 of the
+   *disputed* cases yourself before looking at any method's answer, and score every method on them too.
+   Step 2: the key itself scored 69%; DeepSeek with thinking off on names only scored 78%; the word rule 44%.
+   **Then measure on random pairs too.** Disputed cases are good for *finding* errors but flatter the method
+   that differs most from the old one: Step 2's disputed check said DeepSeek 78% vs word rule 44%; 200 random
+   pairs said 75% vs 76%.
+4. Report per method: missed, wrongly kept, F1, grades unchanged, blind-check share, cost per item, time.
+5. **Watch hidden LLM costs.** deepseek-flash (old alias deepseek-v4-flash) thinks by default: 16,300 hidden tokens for a 50-token answer
+   (98% of the bill). `DeepSeekClient(thinking=False)` or `json_chat(..., thinking=False)` turns it off. Test
+   before switching a job: thinking off changed 16–20% of label, brand-check and buildability answers with mixed
+   quality, but matched or beat thinking on the narrow relevance question.
+
 ## Phase 6. Report and ask
 
 Report in this order: the verdict table, yield, bugs fixed, open issues with their cause, spend. Then **ASK**

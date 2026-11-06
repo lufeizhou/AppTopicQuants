@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Remaining balance on the paid APIs: ScrapeCreators, DataForSEO, DeepSeek.
+"""Remaining balance on the paid APIs: ScrapeCreators, DataForSEO, DeepSeek, plus TypeSafe Jev
+spend (Jev has no balance API, so its row reads the project's own `spend` table).
 
     scripts/balances.sh   (or .venv/bin/python scripts/balances.py)
 
-Each check is appended to data/balances.csv, so the table also shows the change since
-the previous check and over the last 24 hours. Balance lookups are free on all three.
+Each check is appended to data/balances.csv, so the table also shows what was spent
+today and over the last 7 days (top-ups are not netted against spend). Balance lookups are free on all three.
 """
 from __future__ import annotations
 
@@ -88,28 +89,61 @@ def append_log(ts: str, results: dict) -> None:
                 w.writerow([ts, name, bal])
 
 
-def delta(history: list[dict], name: str, now_bal: float, since: dt.datetime | None) -> float | None:
-    """Change from the last logged value (since=None) or the oldest value within the window."""
-    rows = [r for r in history if r["service"] == name]
-    if since is not None:
-        rows = [r for r in rows if dt.datetime.fromisoformat(r["ts"]) >= since]
-        ref = rows[0] if rows else None
-    else:
-        ref = rows[-1] if rows else None
-    return None if ref is None else now_bal - float(ref["balance"])
+def flows(history: list[dict], name: str, now: dt.datetime, now_bal: float,
+          since: dt.datetime) -> tuple[float, float, dt.datetime] | None:
+    """(spent, topped_up, start) since `since`. Starts from the last value logged before
+    `since` (the balance at that moment), else the oldest one inside the window. Every drop
+    between checks counts as spend and every rise as a top-up, so a top-up never hides spend."""
+    rows = [(dt.datetime.fromisoformat(r["ts"]), float(r["balance"])) for r in history if r["service"] == name]
+    before = [p for p in rows if p[0] < since]
+    points = before[-1:] + [p for p in rows if p[0] >= since] + [(now, now_bal)]
+    if len(points) < 2:
+        return None
+    spent = topped = 0.0
+    for (_, a), (_, b) in zip(points, points[1:]):
+        if b < a:
+            spent += a - b
+        else:
+            topped += b - a
+    return spent, topped, points[0][0]
 
 
-def fmt_delta(d: float | None, unit: str) -> str:
-    if d is None:
+def jev_spend(midnight: dt.datetime, week: dt.datetime) -> tuple[float, float]:
+    """TypeSafe Jev has no balance API, so read its spend (USD) as recorded by the project's
+    own runs in the `spend` table: (today, last 7 days)."""
+    import sys
+    sys.path.insert(0, str(ROOT))
+    from apptopics.db import connect_read
+    con, _ = connect_read()
+    try:
+        if not con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name='spend'").fetchone()[0]:
+            return 0.0, 0.0
+        q = "SELECT coalesce(sum(usd), 0) FROM spend WHERE api = 'jev' AND ts >= ?"
+        return tuple(float(con.execute(q, [t]).fetchone()[0]) for t in (midnight, week))
+    finally:
+        con.close()
+
+
+def num(x: float, unit: str) -> str:
+    if unit == "credits":
+        return f"{x:,.0f}"
+    if unit == "USD (Jev)":   # Jev runs cost fractions of a cent
+        return f"{x:,.2f}" if x >= 0.995 else f"{x:.3g}"
+    return f"{x:,.2f}"
+
+
+def fmt_spent(f: tuple | None, unit: str) -> str:
+    if f is None:
         return f"{DIM}—{RESET}"
-    if abs(d) < 1e-9:
+    if f[0] < 1e-9:
         return f"{DIM}0{RESET}"
-    s = f"{d:+,.0f}" if unit == "credits" else f"{d:+,.2f}"
-    return f"{RED if d < 0 else GREEN}{s}{RESET}"
+    return f"{RED}-{num(f[0], unit)}{RESET}"
 
 
 def check() -> str:
-    now = dt.datetime.now()
+    now = dt.datetime.now()  # local time, same as the timestamps in the log
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week = now - dt.timedelta(days=7)
     history = read_log()
     with ThreadPoolExecutor(3) as ex:
         futs = {n: ex.submit(f) for n, f in FETCHERS.items()}
@@ -122,22 +156,29 @@ def check() -> str:
             results[n] = (None, "", str(e)[:70])
     append_log(now.isoformat(timespec="seconds"), results)
 
+    # ANSI codes take width; pad the visible text by hand
+    pad = lambda s, w: " " * max(0, w - len(_strip(s))) + s
     lines = [f"{BOLD}API balances{RESET}  {DIM}{now:%Y-%m-%d %H:%M:%S}{RESET}", ""]
-    lines.append(f"{'service':<16}{'balance':>14}  {'unit':<8}{'since last':>12}{'24h':>12}  note")
-    lines.append(DIM + "─" * 84 + RESET)
+    lines.append(f"{'service':<16}{'balance':>14}  {'unit':<8}{'today':>10}{'7 days':>10}")
+    lines.append(DIM + "─" * 58 + RESET)
     for n, (bal, note, err) in results.items():
         unit, low = SERVICES[n]
         if err:
-            lines.append(f"{n:<16}{RED}{'error':>14}{RESET}  {'':<8}{'':>12}{'':>12}  {RED}{err}{RESET}")
+            lines.append(f"{n:<16}{RED}{'error':>14}{RESET}  {'':<28}  {RED}{err}{RESET}")
             continue
         colour = RED if bal < low else YELLOW if bal < 2 * low else GREEN
-        val = f"{bal:,.0f}" if unit == "credits" else f"{bal:,.2f}"
-        d_last = fmt_delta(delta(history, n, bal, None), unit)
-        d_day = fmt_delta(delta(history, n, bal, now - dt.timedelta(hours=24)), unit)
-        # ANSI codes take width; pad the visible text by hand
-        pad = lambda s, w: " " * max(0, w - len(_strip(s))) + s
-        warn = f"  {RED}LOW (< {low:g}){RESET}" if bal < low else ""
-        lines.append(f"{n:<16}{colour}{val:>14}{RESET}  {unit:<8}{pad(d_last, 12)}{pad(d_day, 12)}  {DIM}{note}{RESET}{warn}")
+        f_day, f_week = (flows(history, n, now, bal, t) for t in (midnight, week))
+        lines.append(f"{n:<16}{colour}{num(bal, unit):>14}{RESET}  {unit:<8}"
+                     f"{pad(fmt_spent(f_day, unit), 10)}{pad(fmt_spent(f_week, unit), 10)}")
+    try:
+        j_day, j_week = jev_spend(midnight, week)
+        lines.append(f"{'TypeSafe Jev':<16}{DIM}{'n/a':>14}{RESET}  {'USD':<8}"
+                     f"{pad(fmt_spent((j_day, 0, None), 'USD (Jev)'), 10)}{pad(fmt_spent((j_week, 0, None), 'USD (Jev)'), 10)}")
+    except Exception as e:
+        lines.append(f"{'TypeSafe Jev':<16}{RED}{'error':>14}{RESET}  {'':<28}  {RED}{str(e)[:70]}{RESET}")
+    lines += ["", f"{DIM}today / 7 days = spent (top-ups excluded) · "
+                  f"balance turns yellow / red when running low{RESET}",
+              f"{DIM}Jev: no balance API; spend is what this project's runs recorded{RESET}"]
     return "\n".join(lines)
 
 

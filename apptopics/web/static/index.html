@@ -41,7 +41,7 @@ label.chk{display:inline-flex;align-items:center;gap:6px;color:var(--text-2);fon
 aside.detail{flex:1 1 400px;min-width:0;position:sticky;top:78px;max-height:calc(100vh - 96px);overflow:auto;padding:22px}
 .tcard{padding:0;overflow:hidden}
 .thead{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--line-2);flex-wrap:wrap}
-.tablewrap{max-height:78vh;overflow:auto}
+.tablewrap{max-height:78vh;overflow:auto}.pager{display:flex;gap:4px;align-items:center;justify-content:center;flex-wrap:wrap;margin:10px 0 2px;font-size:13px}.pager button{min-width:32px;padding:4px 9px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;color:var(--text)}.pager button.on{background:var(--blue-d);border-color:var(--blue-d);color:#fff;font-weight:600}.pager button:disabled{opacity:.4;cursor:default}.pager .gap{color:var(--muted);padding:0 2px}
 table{width:100%;border-collapse:collapse}th,td{padding:8px 10px;text-align:left;white-space:nowrap}
 #t td{border-top:1px solid #F1F3F5;padding:11px 12px;vertical-align:middle}#t td:first-child{padding-left:20px}
 thead th{position:sticky;top:0;background:var(--card);color:var(--text-2);font-weight:500;font-size:12px;cursor:pointer;z-index:1;border-bottom:1px solid var(--line-2)}
@@ -190,7 +190,7 @@ tr.ksel{cursor:pointer}tr.ysel td{background:#F5F9FF}
    <button id="fbtn" aria-expanded="false">Filters</button>
    <div id="fpop">
     <div class="row"><span>Min popularity</span><input id="pop" type="number" min="5" max="100" value="5" style="width:72px"></div>
-    <div class="row"><span>Rows</span><select id="limit"><option>100</option><option selected>300</option><option>1000</option><option>5000</option></select></div>
+    <div class="row"><span>Rows per page</span><select id="limit"><option>50</option><option selected>100</option><option>300</option></select></div>
     <div class="row"><label class="chk"><input id="more" type="checkbox"> All columns (difficulty, trend, P(≥$5k), newcomers…)</label></div>
     <div class="row"><button id="freset">Reset</button><button class="primary" id="fdone">Done</button></div>
    </div>
@@ -212,6 +212,7 @@ tr.ksel{cursor:pointer}tr.ysel td{background:#F5F9FF}
    <section class="card tcard">
     <div class="thead"><h2 style="margin:0" id="ttitle">Ranked ideas</h2><span class="sub"><span id="tsort"></span> · <a href="#" id="colsbtn">Show all columns</a></span></div>
     <div class="tablewrap"><table id="t"><thead></thead><tbody></tbody></table></div>
+    <div class="pager" id="pager"></div>
    </section>
   </div>
   <aside class="card detail" id="detail"><div class="kicker">Details</div><h2>Pick an idea</h2><p class="sub" style="font-size:13px;margin-top:8px">Click a row or a dot to see the verdict, why it scored that way, and who it competes with. Tick rows to compare up to 5.</p></aside>
@@ -303,7 +304,8 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{document.que
  document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+b.dataset.v));if(b.dataset.v==="bud")loadBudget();if(b.dataset.v==="res")loadRuns();if(b.dataset.v==="opp")drawMap()});
 
 /* ---------- opportunities ---------- */
-let rows=[],sort={k:"opp_score",d:-1},sel=null,mode="opp";
+let rows=[],sort={k:"opp_score",d:-1},sel=null,mode="opp",page=0;
+const GO={A:4,B:3,"?":2,C:1};   // verdict column sorts by grade first, then score
 const actCls=a=>(a||"").split(" ")[0].toLowerCase();
 const topicMode=()=>mode!=="aso"&&$("#entity").value==="topic";
 const SPD=r=>r.meta?.opp_score?.searches_per_day??(r.demand?spd(r.demand):null);
@@ -325,7 +327,7 @@ const COL={
   fmt:r=>{const om=r.meta?.opp_score||{},hid=r.meta?.composite?.excluded;
    const line2=hid?`hidden: ${esc(r.meta.composite.excluded_reason||"")}`:r.members?.length?`${om.n_members??r.members.length} searches${om.best?` · best “${esc(om.best)}”`:""}${om.hidden_kinds?` · +${om.n_hidden} hidden`:""}`:r._field?`in your ${esc(r._field)}${r._rank?` · ranks #${r._rank}`:" · not in top 200"}`:"";
    return`<div class="nm">${hid?'<span class="tag">hidden</span>':""}${esc(r.label||r.keyword)}${ownTag(r.keyword)}</div>${line2?`<div class="sm" title="${esc(line2)}">${line2}</div>`:""}`}},
- opp_score:{l:()=>mode==="aso"?"New app":"Verdict",tip:()=>TIP.opp_score,val:r=>r.opp_score,fmt:r=>gradeHtml(r,"opp_score")},
+ opp_score:{l:()=>mode==="aso"?"New app":"Verdict",tip:()=>TIP.opp_score,val:r=>r.opp_score==null?null:(GO[r.meta?.opp_score?.grade]||0)*1000+r.opp_score,fmt:r=>gradeHtml(r,"opp_score")},
  aso_score:{l:()=>"ASO",tip:()=>TIP.aso_score,val:r=>r.aso_score,fmt:r=>gradeHtml(r,"aso_score")},
  spd:{l:()=>"Searches / day",tip:()=>"Estimated App Store searches a day (from Apple popularity). Topics: all their searches added up.",val:SPD,fmt:r=>n0(SPD(r)),num:1},
  attainable:{l:()=>"Small apps earn",tip:()=>TIP.attainable,val:USD,fmt:r=>USD(r)!=null?"$"+n0(USD(r))+"<span class='muted'>/mo</span>":"–",num:1},
@@ -340,29 +342,38 @@ function curCols(){const base=mode==="aso"?ASO_COLS:OPP_COLS;if(!$("#more").chec
  return base.concat([...CORE,...MORE].map(c=>c[0]).filter(k=>!base.includes(k)&&k!=="attainable"))}
 let loadSeq=0;
 async function load(){const aso=mode==="aso",my=++loadSeq;
- const p=new URLSearchParams({limit:aso?5000:$("#limit").value,min_popularity:$("#pop").value,include_excluded:$("#excl").checked,entity:aso?"keyword":$("#entity").value});
+ const p=new URLSearchParams({limit:aso?5000:20000,min_popularity:$("#pop").value,include_excluded:$("#excl").checked,entity:aso?"keyword":$("#entity").value});
  $("#entity").disabled=aso;document.querySelectorAll("#entseg button").forEach(b=>{b.disabled=aso;b.classList.toggle("on",!aso&&b.dataset.e===$("#entity").value||aso&&b.dataset.e==="keyword")});
  const q=$("#q").value.trim();if(q)p.set("q",q);
  const got=await(await fetch("/api/keywords?"+p)).json();if(my!==loadSeq)return;   // a newer request has superseded this one
  rows=got;
- if(aso){rows=rows.filter(r=>(r.aso_score||0)>0&&r.meta?.aso_score?.action!=="Skip").slice(0,+$("#limit").value);sort={k:"aso_score",d:-1}}
+ page=0;
+ if(aso){rows=rows.filter(r=>(r.aso_score||0)>0&&r.meta?.aso_score?.action!=="Skip");sort={k:"aso_score",d:-1}}
  else if(sort.k==="aso_score")sort={k:"opp_score",d:-1};render()}
-function fBadge(){const n=(+$("#pop").value!==5)+($("#limit").value!=="300")+$("#more").checked;$("#fbtn").textContent=n?`Filters · ${n}`:"Filters";$("#colsbtn").textContent=$("#more").checked?"Fewer columns":"Show all columns"}
+function fBadge(){const n=(+$("#pop").value!==5)+($("#limit").value!=="100")+$("#more").checked;$("#fbtn").textContent=n?`Filters · ${n}`:"Filters";$("#colsbtn").textContent=$("#more").checked?"Fewer columns":"Show all columns"}
 function render(){const C=curCols();if(!C.includes(sort.k)&&!COL[sort.k])sort={k:mode==="aso"?"aso_score":"opp_score",d:-1};
  const sv=(COL[sort.k]||{val:r=>r[sort.k]}).val;
  rows.sort((a,b)=>{const x=sv(a),y=sv(b);if(x==null)return 1;if(y==null)return -1;return(x<y?-1:x>y?1:0)*sort.d});
  const nh=rows.filter(r=>r.meta?.composite?.excluded).length,ent=mode==="aso"?"ASO keywords":topicMode()?"ideas":"keywords";
- $("#count").textContent=`${rows.length.toLocaleString()} ${ent} shown`+(nh?` · ${nh} hidden`:$("#excl").checked?" · nothing hidden here":"");
+ const per=+$("#limit").value||100,np=Math.max(1,Math.ceil(rows.length/per));if(page>=np)page=np-1;const p0=page*per,shown=rows.slice(p0,p0+per);
+ $("#count").textContent=`${rows.length.toLocaleString()} ${ent}`+(np>1?` · showing ${(p0+1).toLocaleString()}–${Math.min(p0+per,rows.length).toLocaleString()}`:"")+(nh?` · ${nh} hidden`:$("#excl").checked?" · nothing hidden here":"");
  $("#ttitle").textContent=mode==="aso"?"ASO keywords":topicMode()?"Ranked ideas":"Ranked keywords";
  $("#tsort").textContent="Sorted by "+(COL[sort.k]?COL[sort.k].l():sort.k).toLowerCase();fBadge();
  $("#t thead").innerHTML="<tr><th style='width:34px'><span class='vh'>Compare</span></th>"+C.map(k=>{const c=COL[k];const t=c.tip();
   return`<th data-k="${k}" class="${sort.k===k?'on':''} ${c.num?'num':''}">${c.l()}${t?info(t):""}${sort.k===k?(sort.d<0?" ▾":" ▴"):""}</th>`}).join("")+"</tr>";
- $("#t tbody").innerHTML=rows.map(r=>{const hid=r.meta?.composite?.excluded;
+ $("#t tbody").innerHTML=shown.map(r=>{const hid=r.meta?.composite?.excluded;
   return`<tr data-k="${encodeURIComponent(r.keyword)}" class="${sel===r.keyword?'sel ':''}${hid?'hid':''}"><td><input type="checkbox" class="cmpck" aria-label="Compare" ${cmp.has(r.keyword)?"checked":""}></td>`+
    C.map(k=>`<td class="${COL[k].num?'num':''}">${COL[k].fmt(r)}</td>`).join("")+"</tr>"}).join("")||`<tr><td></td><td colspan="${C.length}" class="muted" style="padding:24px 12px">Nothing matches. Clear the search or lower Min popularity in Filters.</td></tr>`;
- document.querySelectorAll("#t th[data-k]").forEach(th=>th.onclick=e=>{if(e.target.classList.contains("i"))return;const k=th.dataset.k;sort=sort.k===k?{k,d:-sort.d}:{k,d:k==="keyword"?1:-1};render()});
+ document.querySelectorAll("#t th[data-k]").forEach(th=>th.onclick=e=>{if(e.target.classList.contains("i"))return;const k=th.dataset.k;sort=sort.k===k?{k,d:-sort.d}:{k,d:k==="keyword"?1:-1};page=0;render()});
+ pagerHtml(np);
  document.querySelectorAll("#t tbody tr[data-k]").forEach(tr=>tr.onclick=e=>{const k=decodeURIComponent(tr.dataset.k);
   if(e.target.classList.contains("cmpck")){e.target.checked?cmp.add(k):cmp.delete(k);cmpBar();return}detail(k)});drawMap()}
+function pagerHtml(np){const el=$("#pager");if(np<=1){el.innerHTML="";return}
+ const nums=[...new Set([0,np-1,page-2,page-1,page,page+1,page+2].filter(i=>i>=0&&i<np))].sort((a,b)=>a-b);
+ let h=`<button data-p="${page-1}" ${page===0?"disabled":""} aria-label="Previous page">‹ Prev</button>`,last=-1;
+ for(const i of nums){if(i-last>1)h+=`<span class="gap">…</span>`;h+=`<button data-p="${i}" class="${i===page?"on":""}">${i+1}</button>`;last=i}
+ h+=`<button data-p="${page+1}" ${page>=np-1?"disabled":""} aria-label="Next page">Next ›</button><span class="sub" style="margin-left:8px">page ${page+1} of ${np}</span>`;
+ el.innerHTML=h;el.querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>{page=+b.dataset.p;render();$(".tablewrap").scrollTop=0;$("#t").scrollIntoView({block:"nearest"})})}
 // ---- compare drawer (A1)
 const cmp=new Set();
 function cmpBar(){const n=cmp.size;$("#cmpbar").style.display=n?"block":"none";$("#cmpn").textContent=`${n} selected`}
@@ -521,6 +532,7 @@ async function topicDetail(r){const d=await(await fetch("/api/keyword/"+encodeUR
  $("#detail").innerHTML=h;wireTabs();wireCmp();$("#detail").scrollTop=0;
  $("#detail").querySelectorAll("tr.mem").forEach(tr=>tr.onclick=()=>detail(decodeURIComponent(tr.dataset.k),"keyword"))}
 async function detail(kw,force){const ent=force||($("#entity").disabled?"keyword":$("#entity").value);
+ {const i=rows.findIndex(x=>x.keyword===kw),per=+$("#limit").value||100;if(i>=0&&Math.floor(i/per)!==page&&!force)page=Math.floor(i/per)}   // a dot clicked on the map jumps to its page
  if(ent==="topic"){sel=kw;render();const r=rows.find(x=>x.keyword===kw);if(r)return topicDetail(r)}
  if(!force){sel=kw;render()}
  let r0=rows.find(x=>x.keyword===kw&&!x.members?.length);
@@ -570,12 +582,13 @@ async function loadOverview(){const o=await(await fetch("/api/overview")).json()
 const clearOwn=()=>{ownSel=null;$("#ownchips").querySelectorAll(".chip").forEach(x=>x.classList.remove("on"))};
 document.querySelectorAll("#viewseg button").forEach(b=>b.onclick=()=>{mode=b.dataset.x;if(mode==="aso")$("#excl").checked=true;clearOwn();document.querySelectorAll("#viewseg button").forEach(x=>x.classList.toggle("on",x===b));load()});
 document.querySelectorAll("#entseg button").forEach(b=>b.onclick=()=>{if(b.disabled)return;$("#entity").value=b.dataset.e;$("#entity").dispatchEvent(new Event("change"))});
-["pop","limit","excl","entity"].forEach(id=>$("#"+id).addEventListener("change",()=>{clearOwn();load()}));
+["pop","excl","entity"].forEach(id=>$("#"+id).addEventListener("change",()=>{clearOwn();load()}));
+$("#limit").addEventListener("change",()=>{page=0;render()});
 $("#more").addEventListener("change",render);
 $("#colsbtn").onclick=e=>{e.preventDefault();$("#more").checked=!$("#more").checked;render()};
 $("#fbtn").onclick=e=>{e.stopPropagation();const on=$("#fpop").style.display!=="block";$("#fpop").style.display=on?"block":"none";$("#fbtn").setAttribute("aria-expanded",on)};
 $("#fdone").onclick=()=>{$("#fpop").style.display="none"};
-$("#freset").onclick=()=>{$("#pop").value=5;$("#limit").value="300";$("#more").checked=false;$("#fpop").style.display="none";load()};
+$("#freset").onclick=()=>{$("#pop").value=5;$("#limit").value="100";$("#more").checked=false;$("#fpop").style.display="none";load()};
 document.addEventListener("click",e=>{if($("#fpop").style.display==="block"&&!e.target.closest("#fpop")&&e.target!==$("#fbtn"))$("#fpop").style.display="none"});
 loadOwn().then(async()=>{const u=new URLSearchParams(location.search);
  if(u.get("own")){ownSel=u.get("own");$("#ownchips").querySelectorAll(".chip").forEach(x=>x.classList.toggle("on",x.dataset.a===ownSel));showOwn();return}

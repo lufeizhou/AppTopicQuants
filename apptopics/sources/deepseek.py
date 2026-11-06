@@ -26,15 +26,17 @@ class DeepSeekClient:
     _client: object = None
     usage_in: int = 0
     usage_out: int = 0
+    usage_hit: int = 0      # input tokens served from DeepSeek's prefix cache (part of usage_in, ~2% of the price)
+    spent_usd: float = 0.0  # priced per call at that moment's peak / off-peak rate (budget.deepseek_usd_per_m)
+    thinking: bool = True   # default for calls that don't say; see _json_chat
 
     @property
     def available(self) -> bool:
         return bool(self.api_key)
 
     def cost_usd(self) -> float:
-        from ..budget import load
-        p = load().get("unit_prices", {})
-        return self.usage_in / 1e6 * p.get("deepseek_in_per_m", 0.14) + self.usage_out / 1e6 * p.get("deepseek_out_per_m", 0.28)
+        """Real cost of the calls so far: each call priced at its own time (peak / off-peak) and cache hits."""
+        return self.spent_usd
 
     def _oa(self):
         if self._client is None:
@@ -44,13 +46,13 @@ class DeepSeekClient:
 
     HARD_TIMEOUT = 240   # seconds per call, wall clock: a trickling response can otherwise hang for many minutes
 
-    def json_chat(self, system: str, user: str, temperature: float = 0.2) -> dict:
+    def json_chat(self, system: str, user: str, temperature: float = 0.2, thinking: bool | None = None) -> dict:
         import threading
         box: dict = {}
 
         def work():   # daemon thread: a hung call can't keep the process alive at exit (ThreadPoolExecutor would)
             try:
-                box["r"] = self._json_chat(system, user, temperature)
+                box["r"] = self._json_chat(system, user, temperature, thinking)
             except BaseException as e:
                 box["e"] = e
         t = threading.Thread(target=work, daemon=True)
@@ -62,16 +64,30 @@ class DeepSeekClient:
             raise box["e"]
         return box["r"]
 
-    def _json_chat(self, system: str, user: str, temperature: float = 0.2) -> dict:
+    def _json_chat(self, system: str, user: str, temperature: float = 0.2, thinking: bool | None = None) -> dict:
+        # deepseek-v4 thinks by default: ~16k hidden tokens for a 50-token yes/no answer (2026-11-06). Only
+        # competitors() turns it off (user, 2026-11-06): it tested as accurate there, while labels, brand check and
+        # buildability changed 16-20% of answers for the worse without it. Every other job keeps thinking on.
+        extra = {} if (self.thinking if thinking is None else thinking) else {"extra_body": {"thinking": {"type": "disabled"}}}
         r = self._oa().chat.completions.create(
             model=self.model, temperature=temperature,
-            response_format={"type": "json_object"},
+            response_format={"type": "json_object"}, **extra,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         )
         if getattr(r, "usage", None):
             self.usage_in += int(getattr(r.usage, "prompt_tokens", 0) or 0)
             self.usage_out += int(getattr(r.usage, "completion_tokens", 0) or 0)
-        return json.loads(r.choices[0].message.content or "{}")
+            tin, tout = int(getattr(r.usage, "prompt_tokens", 0) or 0), int(getattr(r.usage, "completion_tokens", 0) or 0)
+            hit = int(getattr(r.usage, "prompt_cache_hit_tokens", 0) or 0)
+            self.usage_hit += hit
+            from ..budget import deepseek_usd_per_m
+            u = deepseek_usd_per_m()
+            self.spent_usd += ((tin - hit) * u["miss"] + hit * u["hit"] + tout * u["out"]) / 1e6
+        text = r.choices[0].message.content or "{}"
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:   # 'Extra data': a valid object followed by junk; keep the first object
+            return json.JSONDecoder().raw_decode(text.lstrip())[0]
 
     # -- tasks ---------------------------------------------------------------
     def classify_brands(self, keywords: list[str]) -> dict[str, float]:
@@ -222,6 +238,23 @@ class DeepSeekClient:
                     out[str(it.get("term", "")).lower()] = {"p_brand": float(it.get("p_brand", 0) or 0), "kind": it.get("kind") or "none",
                                                             "reason": it.get("reason", "")}
         return out
+
+    def competitors(self, keyword: str, names: list[str], context: list[str] | None = None) -> set[int]:
+        """Step 2 (2026-11-06): which apps on the results page do NOT serve the search? Names only, thinking off
+        (won the Step 2 bake-off: 78% on a blind check of hard cases vs 44% for the word rule).
+        `context` = Apple's top-10 names, sent when only some apps of a page are judged (later runs judge new apps
+        only). The fixed parts come first (instructions, search, context) so repeat calls hit DeepSeek's prefix cache.
+        Returns the indexes (into names) judged not a real option."""
+        sys = ("You audit App Store search results. For the search, list the numbers of the apps that a person who typed it "
+               "would NOT treat as a real option for what they want: the app does a different job, even if it shares a word. "
+               "Apps that do the same job with other words count as real options; the search may have a typo or be in another "
+               "language. Answer JSON {\"no\": [n, ...]}.")
+        user = f"Search: \"{keyword}\"\n"
+        if context:
+            user += "Apple's top results for it (context only, do not judge): " + " | ".join(context) + "\n"
+        user += "Apps to judge:\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(names))
+        out = self.json_chat(sys, user, temperature=0.0, thinking=False).get("no", [])
+        return {int(x) for x in out if str(x).isdigit() and int(x) < len(names)}
 
     def pain_points(self, keyword: str, reviews: list[dict]) -> dict:
         """Mine negative reviews of the band apps: recurring, fixable complaints = opportunity for a newcomer."""

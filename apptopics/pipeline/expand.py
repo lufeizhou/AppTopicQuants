@@ -446,7 +446,8 @@ def brand_check(store: str = settings.store, grades: tuple[str, ...] = ("A", "B"
     res: dict[str, dict] = {}
 
     def fn(ds):
-        res.update(ds.brand_check([{"term": k, "apps": apps.get(k, [])} for k in todo]))
+        from .judges import brand_check as _bc
+        res.update(_bc([{"term": k, "apps": apps.get(k, [])} for k in todo], ds))
         return len(res)
     brands = []
 
@@ -501,8 +502,11 @@ def finish(store: str = settings.store, since: dt.date | None = None, rescore: b
     log.info("searching %d new terms with popularity >= %.0f", len(to_search), min_pop)
     n = search_terms(to_search, store, progress=lambda i, t: log.info("itunes search %d/%d", i, t) if i % 50 == 0 else None)
     relab = collect_llm_labels(store, scope="context")
+    from .collect import collect_jev_relevance, collect_llm_relevance
+    collect_jev_relevance(store)          # Step 2 base judge on the new results pages
+    rel = collect_llm_relevance(store)   # DeepSeek names answer: fallback layer
     out = {"terms": len(terms), "need": len(need), "with_popularity": len(have), "searched": len(to_search), "rows": n,
-           "relabelled": relab.get("new")}
+           "relabelled": relab.get("new"), "relevance": rel.get("pages")}
     if rescore:
         from .score import score_all
         out["index"] = write_retry(lambda c: score_all(c, store)).get("index")

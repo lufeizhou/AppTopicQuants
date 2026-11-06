@@ -463,6 +463,30 @@ def l_labels(store: str = S, relabel: bool = False, workers: int = 8,
     typer.echo(collect_llm_labels(store, relabel, workers, scope=scope))
 
 
+@llm.command("relevance")
+def l_relevance(store: str = S, workers: int = 8, redo: bool = False):
+    """Step 2: DeepSeek decides which apps on each results page really serve the search (names only, thinking off;
+    only pages with apps not judged yet, ~$0.0003 a page). Run `apptopics score` after."""
+    from .pipeline.collect import collect_llm_relevance
+    typer.echo(collect_llm_relevance(store, workers=workers, redo=redo))
+
+
+@llm.command("relevance-jev")
+def l_relevance_jev(store: str = S, workers: int = 16):
+    """Step 2 base judge: TypeSafe Jev on every app without a Jev answer (all pages first time, new apps after).
+    Run `apptopics score` after."""
+    from .pipeline.collect import collect_jev_relevance
+    typer.echo(collect_jev_relevance(store, workers=workers))
+
+
+@llm.command("relevance-desc")
+def l_relevance_desc(store: str = S, workers: int = 10, offpeak_only: bool = typer.Option(True, help="refuse to run / stop at DeepSeek peak price")):
+    """Step 2 hybrid: re-judge with descriptions the apps where the word rule and the names-only answer disagree.
+    Run `apptopics score` after."""
+    from .pipeline.collect import collect_llm_relevance_desc
+    typer.echo(collect_llm_relevance_desc(store, workers=workers, offpeak_only=offpeak_only))
+
+
 @llm.command("brands")
 def l_brands(top: int = 1500, store: str = S):
     """Classify top-N keywords as brand vs generic."""

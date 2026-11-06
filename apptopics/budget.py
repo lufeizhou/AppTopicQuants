@@ -66,13 +66,48 @@ def month_to_date(con, api: str | None = None) -> float:
     return float(con.execute("SELECT coalesce(sum(usd),0) FROM spend WHERE ts>=?", [start]).fetchone()[0])
 
 
+def deepseek_peak(at: dt.datetime | None = None) -> bool:
+    """DeepSeek bills double on weekdays in [unit_prices] deepseek_peak_hours, Beijing time (weekends off-peak)."""
+    from zoneinfo import ZoneInfo
+    bj = ZoneInfo("Asia/Shanghai")
+    t = dt.datetime.now(bj) if at is None else (at if at.tzinfo else at.astimezone()).astimezone(bj)   # naive = local time
+    if t.weekday() >= 5:
+        return False
+    for span in str(load().get("unit_prices", {}).get("deepseek_peak_hours", "09-12,14-18")).split(","):
+        a, b = (int(x) for x in span.split("-"))
+        if a <= t.hour < b:
+            return True
+    return False
+
+
+def deepseek_usd_per_m(at: dt.datetime | None = None) -> dict[str, float]:
+    """USD per million tokens now (or at `at`): miss / hit / out, peak or off-peak."""
+    p = load().get("unit_prices", {})
+    k = float(p.get("deepseek_peak_mult", 2.0)) if deepseek_peak(at) else 1.0
+    fx = float(p.get("cny_per_usd", 7.1))
+    return {"miss": float(p.get("deepseek_cny_miss", 1.0)) * k / fx, "hit": float(p.get("deepseek_cny_hit", 0.02)) * k / fx,
+            "out": float(p.get("deepseek_cny_out", 4.0)) * k / fx, "peak": deepseek_peak(at)}
+
+
+def deepseek_offpeak_note() -> str:
+    """One line for the run buttons: is DeepSeek at peak price now, and when does it end."""
+    from zoneinfo import ZoneInfo
+    if not deepseek_peak():
+        return "DeepSeek is at off-peak price now (half of peak)."
+    t = dt.datetime.now(ZoneInfo("Asia/Shanghai"))
+    ends = [int(s.split("-")[1]) for s in str(load().get("unit_prices", {}).get("deepseek_peak_hours", "09-12,14-18")).split(",")
+            if int(s.split("-")[0]) <= t.hour < int(s.split("-")[1])]
+    return f"DeepSeek is at PEAK price now (2x) until {ends[0]:02d}:00 Beijing time; off-peak is half."
+
+
 def estimate_job(api: str, job: str, n: int) -> float:
     """Rough pre-run cost estimate for n items of a job."""
     p = load().get("unit_prices", {})
     if api == "deepseek":
-        tok_in = {"llm_brands": 20, "llm_labels": 45, "llm_buildability": 60, "topics": 80, "llm_pain_points": 9000, "llm_votes": 1500}.get(job, 500) * n
-        tok_out = {"llm_brands": 15, "llm_labels": 30, "llm_buildability": 40, "topics": 40, "llm_pain_points": 400, "llm_votes": 400}.get(job, 200) * n
-        return tok_in / 1e6 * p.get("deepseek_in_per_m", 0.14) + tok_out / 1e6 * p.get("deepseek_out_per_m", 0.28)
+        tok_in = {"llm_brands": 20, "llm_labels": 45, "llm_buildability": 60, "topics": 80, "llm_pain_points": 9000, "llm_votes": 1500, "llm_relevance": 1500}.get(job, 500) * n
+        tok_out = {"llm_brands": 15, "llm_labels": 30, "llm_buildability": 40, "topics": 40, "llm_pain_points": 400, "llm_votes": 400, "llm_relevance": 250}.get(job, 200) * n
+        u = deepseek_usd_per_m()
+        return tok_in / 1e6 * u["miss"] + tok_out / 1e6 * u["out"]
     if api == "dataforseo":
         if job == "volume":
             return -(-n // 1000) * p.get("dataforseo_volume_task", 0.06)
@@ -82,6 +117,8 @@ def estimate_job(api: str, job: str, n: int) -> float:
             return n * p.get("dataforseo_search_serp", 0.0024)
         if job == "play_reviews":
             return n * p.get("dataforseo_play_reviews", 0.00075)
+    if api == "jev":   # n = search x app pairs; ~70 input tokens each (question + share of the page state)
+        return n * 70 / 1e6 * p.get("jev_in_per_m", 0.042)
     if api == "scrapecreators":
         return n * p.get("scrapecreators_credit", 0.00188)
     return 0.0
@@ -131,6 +168,9 @@ def plan(con, counts: dict[tuple[str, str], int]) -> list[dict]:
         ok, reason = check(con, api, est)
         out.append({"api": api, "job": job, "items": n, "est_usd": round(est, 3), "mtd_usd": round(month_to_date(con, api), 3),
                     "cap_usd": caps.get(api), "ok": ok, "reason": reason})
+    if any(api == "deepseek" for api, _ in counts):
+        out.append({"api": "deepseek", "job": "price now", "items": 0, "est_usd": 0.0, "mtd_usd": round(month_to_date(con, "deepseek"), 3),
+                    "cap_usd": caps.get("deepseek"), "ok": True, "reason": deepseek_offpeak_note()})
     out.append({"api": "total", "job": "", "items": sum(counts.values()), "est_usd": round(sum(r["est_usd"] for r in out), 3),
                 "mtd_usd": round(month_to_date(con), 3), "cap_usd": caps.get("total"),
                 "ok": month_to_date(con) + sum(r["est_usd"] for r in out) <= (caps.get("total") or 1e9), "reason": ""})

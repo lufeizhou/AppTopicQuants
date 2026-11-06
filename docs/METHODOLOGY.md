@@ -75,14 +75,50 @@ dropped 146 solid Build-now searches such as `room design` to Watch). A second p
 third-party utilities for a brand's device (`vizio tv remote`) stay needs. Brand and rubbish are dropped later; brand/rubbish
 searches get no results page.
 
+**Adult intent is rubbish** (2026-11-06): sexual or nude content, undressing tools, "uncensored / no filter" AI,
+adult dating and sex chat. Jev asks one yes/no question inside the label call; a search is rubbish when it has an
+adult word cue and Jev ≥ 0.3, or Jev ≥ 0.75 alone (`metrics/adult.py`). 79 searches were set by hand
+(`model='manual'`, never relabelled). LGBTQ dating, porn blockers and photo vaults stay needs.
+
 ### Step 2. Sector: who competes for it
 
-**In:** the iTunes results page (top 200) for the search.
-**Out:** the sector = the apps that actually serve the search (search words appear in name, subtitle or
-description). Apple pads vague searches with unrelated big apps; those are removed.
+**In:** the iTunes results page (top 200, ~174 apps on a typical page) for every search with popularity ≥ 15.
+**Out:** the sector = the apps that actually serve the search. Apple pads vague searches with unrelated big
+apps; those are removed.
+
+How an app is kept (decided 2026-11-06), strongest answer first:
+
+1. **Manual** answers (2,400 disputed apps judged by hand).
+2. **Sonnet** answers (one-off review of 69k disputed apps that earn money; 78% agreement with the hand labels).
+3. **TypeSafe Jev** for every app on every page: the probability that someone who typed the search treats the app
+   as a real option (name + 120 characters of description, Apple's top 10 as context); kept at p ≥ 0.5.
+   85% right on 200 random hand-labelled pairs (word rule 76%, DeepSeek names 75%). Later runs judge new apps only.
+4. DeepSeek on app names, then the word rule, for anything not judged yet.
+
+Example: `text editor free` keeps Google Docs, Word and Pages but not Photoshop Express; `custom keyboard sounds`
+keeps the sound apps, not the keyboard themes.
+
+The **word rule** (also the fallback for apps DeepSeek has not judged yet):
+
+| Rule | Example |
+|---|---|
+| The search's words must appear in the app's name or the first 2,000 characters of its description (iTunes returns almost no subtitles) | |
+| Word forms count as the same word | translator ≈ Translate, running ≈ Run, editor ≈ Edit |
+| Small words are ignored | app, free, best, for, from, no |
+| One-word search: the word must be there | |
+| Longer search: half the words, **including the job word** | "timer widget" needs *timer*: Big Timer stays |
+| Job word = a word ≥ 8 of Apple's top 10 apps carry (the rarer one if several), else the most common one; never a generic word like *ai* | "calorie counter" needs *calorie* (Step Counter is out); "ai mirror" needs *mirror* |
+| Typo or other language: if Apple's top 10 hardly contain the words, use the word they share | camra → camera, despertador → clock, tato → tattoo (needs only, not brands) |
 
 A sector needs **≥ 30 relevant apps**, otherwise the p5-p20 band is just the 2-3 leaders. Fewer than 30 →
-grade **?, "not sure"** (no market to judge yet, which is different from a bad market).
+grade **?, "not sure"** (no market to judge yet, which is different from a bad market). Tested 2026-11-06: a
+minimum of 20 would grade 103 more searches (+3 A, +54 B, +46 C) on a 3-app band; kept at 30.
+
+**Other languages.** Searches in Spanish, Portuguese, French, German, Italian or Turkish (`foto`, `traductor de
+ingles a español`, `la biblia`) keep their grade but are hidden by default ("Show hidden" lists them, tagged
+"other language"): building for them means a translated app. Topics take their grade from English searches only.
+Rule: a non-English letter or a common non-English word (`metrics/language.py`); `[step5.filters]
+hide_other_language`.
 
 ### Step 3. Revenue: what each app earns
 

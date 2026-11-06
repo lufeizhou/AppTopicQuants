@@ -115,6 +115,8 @@ def composite(con, store: str = settings.store, snapshot_date: dt.date | None = 
     max_brand = filters.get("max_brandness")
     min_cov = filters.get("min_coverage")
     latin_only = filters.get("latin_only", True)
+    hide_other_lang = filters.get("hide_other_language", True)
+    from ..metrics.language import other_language
     max_dif = filters.get("max_difficulty")
     excl_terms = [t.lower() for t in filters.get("exclude_terms", [])]
     game_sectors: set[str] = set()
@@ -136,6 +138,8 @@ def composite(con, store: str = settings.store, snapshot_date: dt.date | None = 
             excluded.append(f"brandness>{max_brand}")
         if latin_only and entity_type == "keyword" and not all(ord(ch) < 0x250 for ch in e):
             excluded.append("non-latin script")
+        elif hide_other_lang and entity_type == "keyword" and other_language(e):
+            excluded.append("other language")      # soft: grade kept, shown with "Show hidden" (Step 2, 2026-11-06)
         if max_dif is not None and (mat[e].get("difficulty") or 0) > max_dif:
             excluded.append(f"difficulty>{max_dif}")
         if entity_type == "keyword" and require_sector and mat[e].get("breadth") is None:

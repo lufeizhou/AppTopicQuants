@@ -259,10 +259,328 @@ definition.
 
 ---
 
+## 2026-11-06 · Step 2 review: who competes for a search
+
+Step 2 turns a results page (~174 apps) into the **sector**: the apps that really serve the search. Every money
+number and grade comes from it.
+
+### How it was checked
+
+DeepSeek judged every app on 40 sample results pages (10 one-word, 18 two-word, 12 longer searches; ~7,000 apps):
+"would someone who typed this search treat this app as a real option?" Then each grade was recomputed with
+DeepSeek's list instead of the word rule's. Cost $0.57 (two runs; the second at temperature 0 is cached in the
+scratchpad, so re-checks are free). DeepSeek is not perfect either (it reads name + 300 characters; `nom`,
+`couple calendar` are debatable): this gives patterns, not exact rates.
+
+### Findings
+
+| # | Issue | Example |
+|---|---|---|
+| 1 | The required word was the rarest word, often a describing word, so real competitors were thrown out | `timer widget` dropped 71 timers (Big Timer, Visual Timer); `app blocker for productivity` dropped Refocus, ScreenZen |
+| 2 | Word forms did not match, so leaders were dropped | `translator` dropped Google Translate, DeepL; `running` dropped Strava ("Run") |
+| 3 | Typos and other languages kept almost nothing → **?** | `camra` kept 0 of 173 (110 are cameras); `despertador` 2; `tato` 6 |
+| 4 | Longer searches keep apps that share only some words → band money too high | `custom keyboard sounds` kept 125, ~17 make keyboard sounds; band ~×1.7 too high on 3+ word searches |
+| 5 | Subtitles are not used: iTunes Search returns them for 678 of 2.3M rows | method said "name, subtitle, description" |
+| 6 | Not an issue: ~23,000 "No data" searches have popularity < 15, so no page is fetched on purpose | |
+
+### Changes (`metrics/relevance.py`)
+
+- **Job word from Apple's top 10:** the required word is one ≥ 8 of Apple's top-10 names carry (the rarest of
+  those), else the most common one; never a generic word (`ai`, `easy`). `timer widget` → *timer*,
+  `calorie counter` → *calorie*, `ai mirror` → *mirror*.
+- **Word forms:** wider stemming (translator ≈ translate, running ≈ run, editor ≈ edit, gifs ≈ gif; chess,
+  fitness untouched). More small words ignored (from, no, into, without, ...).
+- **Read-as:** when ≤ 2 of Apple's top 10 contain the words but the page is full, and the search is labelled a need
+  (p_brand < 0.5), match on the word Apple's top 10 share: `camra` → camera, `despertador` → clock, `tato` → tattoo.
+  Shown in the reason: "note: read as 'camera' (Apple's top results)". 110 searches.
+- Docs: METHODOLOGY Step 2 rule table; sector docstring said "up to 100 apps" (it is 200).
+- Tests: `test_word_forms_match_the_leaders`, `test_anchor_is_the_job_word_apple_shows`,
+  `test_read_as_finds_what_apple_understood` (60 pass).
+- Rescore + the normal follow-ups: 104 new A candidates judged for buildability, 3,770 brand checks (~$0.47).
+
+### Before → after
+
+40-search check (against DeepSeek's list):
+
+| | Before | After |
+|---|---|---|
+| Real competitors thrown out | 29% | **11%** |
+| Wrong apps kept | 27% | 31% |
+| Grade same as with DeepSeek's list | 28 / 40 | **30 / 40** |
+
+Whole universe:
+
+| | Before | After |
+|---|---|---|
+| Searches under 30 relevant apps | 5,102 | **3,403** |
+| Searches A / B / ? / C | 634 / 3,509 / 644 / 19,373 | **767 / 3,738 / 185 / 19,470** |
+| Topics A / B / ? / C | 347 / 1,148 / 230 / 8,915 | **396 / 1,209 / 83 / 8,952** |
+
+734 searches changed grade: ? → B 338, B → A 112, ? → C 86, B → C 74, C → B 63, ? → A 39, A → B 14, other 8.
+
+| Search | Kept | Grade | Why |
+|---|---|---|---|
+| timer widget | 103 → 160 | B → B | money now $2,146 (was $3,637), 0 young winners (was 1): more small timers in the band |
+| translator | 165 → 189 | A → A | Google Translate, DeepL back in |
+| app blocker for productivity | 49 → 176 | B → B | 12 young winners; only traffic missing (27) |
+| camra | 0 → 160 | **? → A** | read as camera |
+| despertador | 2 → 148 | ? → B | read as clock |
+
+### Round 2: picking a cheaper judge (bake-off)
+
+User: "do we have a cheap while effective method?" Nine methods were scored against DeepSeek's answer key (40
+searches, 7,103 pairs, grouped cross-validation for anything fitted) and against **120 disputed pairs labelled
+blind** by hand (the key is itself DeepSeek, so it favours DeepSeek-like methods).
+
+| Method | F1 vs key | Grades same / 40 | Blind check (hard cases) | Cost / search |
+|---|---|---|---|---|
+| Word rule (fixed above) | 0.77 | 30 | 44% | free |
+| Free embeddings (BGE-small, MiniLM) | 0.72–0.73 | 30–34 | – | free |
+| Free rerankers (BGE-reranker-base, MiniLM cross-encoder) | 0.71–0.77 | 27–30 | – | free |
+| Small trained checker (rule + rank + embeddings) | 0.75–0.76 | 30–36 | – | free |
+| DeepSeek, thinking on, names | 0.88 | 37 | 70% | ~$0.005 |
+| DeepSeek, thinking on, name + 300 chars (the key) | – | – | 69% | ~$0.007 |
+| **DeepSeek, thinking off, names** | 0.83 | 33 | **78%** | **~$0.0007** (peak) |
+| DeepSeek, thinking off, name + 150 chars | 0.86 | 30 | 77% | ~$0.003 |
+
+Free local models measure "similar topic", not "does the same job" (keyboard-theme apps look close to `custom
+keyboard sounds`), so they did not beat the word rule.
+
+### Decisions (user, 2026-11-06)
+
+| # | Area | Decision | Why |
+|---|---|---|---|
+| 28 | Step 2 judge | DeepSeek, thinking off, app names only, decides who competes, for **every** results page; the word rule is the fallback for apps not judged yet | Best on the blind check, cheapest DeepSeek option |
+| 29 | Thinking | Off only for the competitor judge; **on** for labels, brand check, buildability and everything else | Thinking off changed 16–20% of those answers, mostly for the worse (adult / illegal searches became needs, "holy bible niv" licensing missed) and would save ~$1/month |
+| 30 | Cost | Later runs send only new apps (+ Apple's top 10 as context, fixed parts first for DeepSeek's prefix cache); prices follow DeepSeek's peak / off-peak hours | User: cache misses made the first pass expensive; price differs by time |
+
+### Changes (round 2)
+
+- `DeepSeekClient.competitors()` (names only, thinking off, answers the apps that do NOT serve the search);
+  `json_chat(..., thinking=)` and `DeepSeekClient.thinking`; a JSON answer followed by junk is recovered.
+- Table `app_relevance` (one answer per search × app); `collect_llm_relevance` (cached in
+  `data/cache/llm_relevance.jsonl`, resumable; with `con=` inside the weekly run); `apptopics llm relevance`;
+  wired into `run-weekly` (after buildability) and `expand finish`. `relevance.py` uses the answer where it
+  exists; each search's meta says `competitors_by` (DeepSeek / word rule).
+- Prices: `[unit_prices]` now holds DeepSeek's CNY prices (miss 1.00, hit 0.02, output 4.00 per M off-peak,
+  ×2 at peak: weekdays 09–12 and 14–18 Beijing time; weekends off-peak). Each call is priced at its own time
+  with cache hits (`budget.deepseek_usd_per_m`); the cost preview shows "DeepSeek is at PEAK price now …".
+- The old flat price (0.14 / 0.28 USD) under-counted: the full pass was recorded at $4.26 but billed ~¥72
+  (~$10.14, all at peak: 21.5M input misses, 3.6M output). A $5.88 correction is booked
+  (`llm_relevance_price_fix`). Earlier DeepSeek jobs this month were also under-counted (output priced at ¼).
+  DeepSeek cap raised 8 → 15 for this pass (month-to-date $14.11 after it).
+- Tests: `test_deepseek_peak_hours_beijing`; budget plan test updated (61 pass).
+
+### Run
+
+All 14,257 results pages judged (14:17–14:53, 16 workers): 2.33M answers, 53% of apps kept. Then rescore,
+16 buildability judgements, 101 brand checks ($0.04), rescore.
+
+### Before → after (whole Step 2)
+
+| | Before Step 2 | Word rule fixed | **DeepSeek judge** |
+|---|---|---|---|
+| Searches A / B / ? / C | 634 / 3,509 / 644 / 19,373 | 767 / 3,738 / 185 / 19,470 | **526 / 3,668 / 273 / 19,693** |
+| Topics A / B / ? / C | 347 / 1,148 / 230 / 8,915 | 396 / 1,209 / 83 / 8,952 | **270 / 1,192 / 136 / 9,042** |
+| Searches under 30 relevant apps | 5,102 | 3,403 | see `?` |
+
+Of the 634 A searches before Step 2, 422 stay A, 212 left (mostly to B: the band money or the young winners came
+from apps that do a different job), 104 are new.
+
+| Search | Before | Word rule fixed | DeepSeek | Why |
+|---|---|---|---|---|
+| text editor free | A | A | **B** | photo / video "editors" (Photoshop Express, Splice, VN) were counted; band $23k → $2.7k |
+| custom keyboard sounds | B | B | **?** | 13 apps make keyboard sounds; the rest are themes |
+| ai mirror | B | B | **A** | 54 real competitors; band $22k, 4 young winners |
+| camra | ? | A | A | 118 cameras |
+| translator / calorie counter | A | A | A | unchanged |
+
+### Round 3: check on random pairs, hybrid, languages, minimum size (2026-11-06)
+
+Rating before round 3: methods 8/10, results 7.5/10.
+
+| # | Area | Decision | Why |
+|---|---|---|---|
+| 31 | Validation | Claude labels 200 random search × app pairs by hand (50 searches × 4); kept as `gold200.json` in the round's scratchpad and re-used for every judge change | User: "you do it for me, larger pairs" |
+| 32 | Judge | Hybrid built and tested, then **not run**: keep DeepSeek names only (user: "stop it. let's use current"). `apptopics llm relevance-desc` stays available (manual, off-peak only); without its answers `relevance()` gives exactly the names-only result | ~¥35 for +5 points on the random check |
+| 33 | Languages | Other-language searches: tag + soft hide (grade kept, "Show hidden") | User |
+| 34 | Minimum | Keep 30 relevant apps | 20 adds +3 A on a 3-app band |
+
+**The random check changed the picture.** The bake-off's blind check used only disputed cases, which flattered
+DeepSeek (78% vs 44%). On 200 random pairs:
+
+| Method | Right | Missed real | Wrongly kept | F1 |
+|---|---|---|---|---|
+| Word rule (fixed) | 76% | 11 / 135 | 38 / 162 | 0.84 |
+| DeepSeek names only (round 2, live) | 75% | 23 / 135 | 27 / 139 | 0.82 |
+| DeepSeek, descriptions for vague names (12% of apps) | 78% | 24 | 20 | 0.83 |
+| **Hybrid** (descriptions where rule and names disagree) | **80%** | 13 | 27 | **0.86** |
+| DeepSeek, descriptions for every app | 83% | 14 | 20 | 0.88 |
+
+Names-only misses are mostly names that do not say the job (`Light Lamb`, `Google Flow`, `Brave Browser` for
+"browser with vpn", `Magic Tiles 3` for "play piano"). Lesson added to OPTIMISING: sample disputed cases to *find*
+errors, but measure on random pairs.
+
+Changes:
+- `metrics/language.py` + `[step5.filters] hide_other_language = true`: 608 searches tagged (A 15, B 77, ? 8,
+  C 164, no data 344). Grades kept; topics grade from English members only (4 topics B → C, 1 A → B; 29 topics
+  made only of other-language searches without data show "-"). Test `test_other_language_tag`.
+- `app_relevance.relevant_desc`, `collect_llm_relevance_desc` (`apptopics llm relevance-desc`, manual, off-peak
+  only by default; not in `run-weekly` or `expand finish`), hybrid decision in `relevance()` (inactive while
+  `relevant_desc` is empty); `relevance(use_llm=False)` gives the word rule alone.
+- Min-size test on a copy (min 20): searches ? 273 → 170 (+3 A, +54 B, +46 C), topics ? 136 → 85. Kept 30.
+- DeepSeek cap stays 15 (the hybrid pass was not run).
+
+### Round 4: one-off manual review of grade-deciding disputes (2026-11-06)
+
+User: "review those missed words manually for one time; pick the important apps." Scope: the 221 searches where the
+word rule and DeepSeek disagree about grade **A**; the 100 most searched of them; the 4 biggest-earning disputed apps
+of each = **400 pairs**, judged by hand by Claude (name + description). Stored in `app_relevance.relevant_manual`
+(wins over every other answer) and `data/cache/manual_relevance_2026-11-06.json`.
+
+- On these 400: DeepSeek agreed with the manual answer 60%, the word rule 40%. DeepSeek right: crypto trackers out
+  of `coin id`, storage cleaners out of `email cleaner`. DeepSeek wrong: pixel-art apps out of `pixel art`,
+  storage cleaners out of `photo cleaner`, ChatGPT / Claude out of `ai agent`.
+- Grades: searches A 526 → **539** (13 B → A, 1 B → ?), topics A 269 → **276** (7 B → A). New A: `ai chat roleplay`,
+  `ai tutor`, `brain training`, `daily planner`, `keyboard free`, `voice translator`, `voice changer free`,
+  `trading game`, `gallery cleaner`, `ringtone maker free`, `beat maker pro`, `daily devotional`,
+  `voice changer with effects`.
+- **Second pass (user: "judge more, at least 2000, highest value first"):** 2,000 more pairs on 279 searches where the
+  two methods give different grades: 1,415 on A-deciding searches (most searched first), the rest on B/C and ?/B
+  disagreements; biggest-earning disputed apps first. DeepSeek agreed with the manual answer 61% (60% on the
+  A-deciding ones), the word rule 39%. Typical DeepSeek misses: general wallpaper apps for `anime wallpaper`,
+  screen-mirroring apps for `mirror`, cleaners that merge contacts for `contact cleanup`, Ethiopian-Bible apps for
+  `book of enoch`. Adult-intent searches (`ai clothes eraser`, `uncensored image editor`) were judged 0 on purpose:
+  they should be labelled rubbish in Step 1 (backlog).
+- After all 2,400 manual answers: searches A 526 → 539 → **563**, ? 273 → **260**; topics A 269 → 276 → **288**.
+  New A (second pass): `ai anime`, `ai character generator`, `ai chat characters`, `ai dance`, `ai interior design
+  free`, `ai voice over generator`, `audio recorder for iphone`, `barcode reader for iphone`, `free sketching app`,
+  `photo cleaner`, `hd photo enhancer`, `unblur photo`, `toddler learning games`, `noaa weather radar` and 12 more;
+  `emoji battery widget` and `slumber` A → B; `faceless reels`, `vibration massager`, `daily readings orthodox`
+  B → C.
+- **Sonnet fan-out (user: "use multiple agents and Sonnet to grade all remaining, one-time job"):** the 69,410 remaining
+  disputed apps that earn money (>= $2.5k/mo, or young >= $1.5k) on 4,349 A/B/? need searches, in 69 batches of
+  ~1,000 (one Sonnet agent each, Apple's top 5 as context, same rubric as the hand review), plus a blind
+  calibration batch of 300 hand-labelled pairs. 71 agents, ~11 minutes, 3 IDs re-asked. **Agreement with the hand
+  labels: Sonnet 78%, DeepSeek 61%** on the same 300 hard pairs. Stored in `app_relevance.relevant_sonnet`
+  (below manual, above DeepSeek); `data/cache/sonnet_relevance_*_2026-11-06.json`. Sonnet kept 44% of them.
+  Searches A 563 → **628** (77 B → A, 18 A → B, 40 B → C), ? 260 → **231**; topics A 288 → **313**.
+- **Bug found and fixed:** a read copy made before the `relevant_desc` column existed made `relevance()`'s query
+  fail and fall back to the word rule silently (the grades in use were not affected: they were scored before).
+  The query now checks which columns exist. Regression test `test_llm_answers_used_even_without_new_columns`.
+
+### Round 5: TypeSafe Jev (2026-11-06)
+
+User: "shall we try jev? much faster and cheaper while accurate ... all the options, choices, labelling related work should
+go to jev if it works." Jev ("System One" model) answers typed yes/no / choice questions with probabilities;
+$0.042 per M input tokens, output free. Client `sources/jev.py` (`TYPESAFE_API_KEY`, model pinned `jev-1.14.0`).
+
+**Who competes (Step 2)**, against Claude's hand labels:
+
+| Method | 200 random pairs | 300 hard pairs | Cost / time |
+|---|---|---|---|
+| Word rule | 76% | – | free |
+| DeepSeek names only | 75% | 61% | ~¥72, 35 min (all pages) |
+| DeepSeek with descriptions | 83% | – | ~3× names |
+| Sonnet agents | – | 78% | 71 agents, 11 min (69k pairs) |
+| **Jev, p ≥ 0.5** | **85%** | 74% (F1 0.75 vs Sonnet 0.72) | **$0.005 for 500 pairs, 6 s** |
+
+Decision #35 (user): **Jev is the base judge for every app on every page** (`app_relevance.p_jev`, keep at
+`JEV_THRESHOLD = 0.5`); priority manual > Sonnet > Jev > DeepSeek names > word rule. `collect_jev_relevance`
+(`apptopics llm relevance-jev`), in `run-weekly` and `expand finish` (new apps only). Full pass: 2.33M pairs, ~10 min.
+
+**Result of the Jev pass** (2.33M pairs, 46k calls, 119M input tokens, $5.01, ~9 min; 60% of apps kept). Then the new
+A candidates went through the hybrids (buildability 17: Jev 9 / DeepSeek 8; brand check 47: Jev 32 / DeepSeek 15) and a
+rescore.
+
+| | Before Step 2 | After Sonnet | **Final (manual > Sonnet > Jev)** |
+|---|---|---|---|
+| Right on 200 random hand-labelled pairs | 68% | 76% | **86%** (missed 3 of 135, wrongly kept 25, F1 0.90) |
+| Searches A / B / ? / C | 634 / 3,509 / 644 / 19,373 | 628 / 3,553 / 231 / 19,748 | **644 / 3,787 / 192 / 19,537** |
+| Topics A / B / ? / C | 347 / 1,148 / 230 / 8,915 | 313 / 1,132 / 120 / 9,046 | **320 / 1,238 / 110 / 8,943** |
+
+Jev keeps more real competitors than DeepSeek did, so 256 searches moved C → B (money that strict lists had hidden).
+
+**Other labelling jobs** (same samples as the thinking test; answer key = agreements + Claude's judgement of every
+disagreement):
+
+| Job | DeepSeek | Jev, first prompt | Jev, narrow questions | **Jev first, DeepSeek when unsure** | to DeepSeek |
+|---|---|---|---|---|---|
+| Labels, need vs not (100) | 97% | 94% | 87% | **97%** | 35% |
+| Labels, 3-way (100) | 93% | 77% | 82% | **93%** | |
+| Brand check (80) | 81% | 85% | 86% | **93%** | 21% |
+| Buildability (80) | 93% | 74% | 83% | **91%** | 44% |
+
+Decision #36 (user: "replace deepseek by jev if more or less same accuracy"): `pipeline/judges.py` runs Jev first and
+sends only the unsure cases to DeepSeek (labels: confidence < 0.7; brand check: 0.2 ≤ p ≤ 0.8; buildability:
+0.25 ≤ score ≤ 0.75). Narrow questions helped brand check and buildability (one question per blocker: licensed data,
+network effects, OS access, big game / regulated); for labels the first prompt was better. Answers say which model
+gave them (`reason: "jev ..."`). Without a Jev key everything goes to DeepSeek as before.
+
+Not moved: topic clustering / attach-hidden (grouping, not a fixed set of labels; attach-hidden could become a Jev
+Choice over existing topics, up to 255 options, next to test). ~~Jev spend inside the label jobs is not yet written
+to the `spend` table~~ **Done** (round 6).
+
+### Round 6: open decisions (2026-11-06)
+
+Decisions (user): adult-intent searches are **rubbish**; record Jev spend now; test attach-hidden with Jev.
+
+**Adult intent.** Jev asked one yes/no question ("sexual, nude, undressing, uncensored / NSFW generators, hookups,
+18+?") for all 33,388 searches labelled need ($0.53, 6 minutes). Claude reviewed the 310 with p ≥ 0.3 against
+Apple's top apps: **79 adult** (`uncensored ai chat`, `ai clothes eraser`, `sex dice`, `adult dating app free`,
+`video call with women`, `truth or dare game for adults` whose top app is "Sex Game for Couple: Dirty 18+"), stored as
+rubbish with `model='manual'` (`data/cache/manual_adult_2026-11-06.json`); relabel runs now skip manual labels.
+Not adult: LGBTQ dating (`gay`, `jack`), `quit porn blocker`, `ai baby maker`, `free people remover`, photo vaults.
+User decision: phone-vibrator searches (5, incl. `vibration massager`, an A in round 4) are adult too; AI
+girlfriend searches (36) and couples / party games for adults (15) stay needs.
+
+Jev alone is noisy in the middle (`quit porn blocker` 0.59), a word list alone is too broad (`sex offender map`,
+`brain games for adults`). Rule for new searches (`metrics/adult.py`, asked inside the Jev label call):
+
+| rule | adult caught (of 79) | wrongly flagged |
+|---|---|---|
+| Jev ≥ 0.75 | 23 | 1 |
+| Jev ≥ 0.5 | 69 | 41 |
+| word cue alone | 75 | 217 |
+| **word cue and Jev ≥ 0.3, or Jev ≥ 0.75** | **77** | **1** (`juegos para adultos`) |
+
+Tuned on the same set, so expect a little worse on new searches.
+
+Before → after: searches B 3,787 → 3,767, ? 192 → 190, C 19,537 → 19,609 (A 644 unchanged); topics B 1,238 → 1,230,
+? 110 → 108, C 8,943 → 8,953 (A 320 unchanged).
+
+**Jev spend.** `judges.py` collects Jev tokens per job; `record_jev(con)` writes them (api `jev`, job `llm_labels` /
+`llm_brand_check` / `llm_buildability`) where the job records its DeepSeek spend. Found on the way: `label_terms`
+(discover / expand) recorded no spend at all, DeepSeek included; fixed.
+
+**Attach to topics with Jev (test only).** 300 searches already in a topic, shortlist of 12 topics by shared words,
+Jev picks one or "none" ($0.01, 7 seconds):
+
+| | count |
+|---|---|
+| own topic in the shortlist | 276 / 300 |
+| Jev picks DeepSeek's topic | 222 / 300 (74%) |
+| Jev confident (≥ 0.7) | 224, of which 194 agree (87%) |
+
+The confident disagreements are nearly all near-duplicate topics, both right: `budget planner` → "Budgeting app"
+(DeepSeek) vs "Budget planner" (Jev); `rain sounds for sleep` → "Sleep sounds / white noise" vs "Rain sounds";
+`secure vpn-safer internet` → "VPN" vs "Secure VPN". Jev usually picks the more specific one. Finding: the topic
+merge leaves many near-duplicates.
+
+### Open
+
+- DeepSeek is stricter than a person on some pages (`new emojis for iphone free` excludes Facemoji Emoji Keyboard
+  and "Emoji Maker").
+- The brand check flagged some generic needs as brands (`insomnia coach`, `big math flash cards`, `yoga workout 3d`).
+- ~~Model id~~ **Done:** `DEEPSEEK_MODEL=deepseek-flash` (the API lists only `deepseek-flash` and `deepseek-v4-pro`; `deepseek-v4-flash` was an alias answered by `deepseek-flash`, so every call this month already used it: nothing re-run).
+
+---
+
 ## Backlog for later steps (found during Step 1)
 
 | Step | Item | Evidence |
 |---|---|---|
+| 1 Labels | ~~Adult-intent searches graded as needs (`ai clothes eraser`, `uncensored image editor`)~~ **Done 2026-11-06**: rubbish (Step 2 round 6) | Manual review 2026-11-06 |
 | 5 Filters | Concentration cutoff flips visibility on one day's chart move | `water tracker`, `intermittent fasting` hidden after MyFitnessPal #2 → #1 in Health & Fitness (see Step 1 open items) |
 | 6 Score | Demand counts social views at most 25%: markets reached through TikTok/ads score low | GLP-1 medication tracker: demand 0.24 (~230 App Store searches/day) vs 4.5M video views |
 | 6/7/8 | ~~Topic grade and research grade share letters but answer different questions~~ **Done 2026-11-05**: one evidence rule for both (#21) | GLP-1 now B in both |
