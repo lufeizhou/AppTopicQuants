@@ -73,7 +73,38 @@ def overview(store: str = settings.store):
 _CACHE: dict = {}
 SLIM = {"composite": ("excluded", "excluded_reason", "label"),
         "opp_score": ("grade", "action", "reason", "parts", "n_members", "n_strong", "searches_per_day", "best", "traffic_adj", "n_hidden", "hidden_kinds", "hidden"),
-        "aso_score": ("grade", "action", "reason"), "attainable": ("attainable_usd",)}
+        "aso_score": ("grade", "action", "reason"), "attainable": ("attainable_usd",),
+        **{k: ("why", "early", "blocks", "value_cat", "category", "coverage", "n") for k in
+           ("idx_popularity", "idx_paying", "idx_momentum", "idx_demand")}}
+IDX = ("idx_popularity", "idx_paying", "idx_momentum", "idx_demand")
+
+
+def no_dollars(text: str | None, row: dict) -> str | None:
+    """Step 3 (2026-11-06): the dashboard shows Popularity / Paying / Momentum scores, not dollar guesses. The grade
+    still uses the dollar model until Step 6, so its reasons are reworded here: money facts become the Paying score."""
+    import re
+    if not text:
+        return text
+    pay = row.get("idx_paying")
+    pay_s = f"paying {pay:.0f}" if pay is not None else "paying not measured yet"
+    text = re.sub(r"p5-p20 apps earn ~\$[\d,]+/mo", pay_s, text)
+    text = re.sub(r"(\d+) young apps? earns? \$5k\+", lambda m: f"{m.group(1)} young app{'s' if m.group(1) != '1' else ''} earning well", text)
+    text = re.sub(r"~?(\d+) young apps already earn \$5k\+", r"\1 young apps earning well", text)
+    text = text.replace("no young app earns $5k+ yet", "no young app earning well yet")
+    text = re.sub(r"band ?< ?\$[\d,]+", "low earnings", text)
+    text = re.sub(r"p5[-–]p20 band under \$1k/month", "low earnings", text)
+    text = re.sub(r"popularity (\d+) \(~([\d,]+)/day\)", r"~\2 searches/day (search popularity \1)", text)   # not the app Popularity score
+    return text
+
+
+def _scrub(r: dict) -> dict:
+    m = r.get("meta") or {}
+    for k in ("opp_score", "aso_score"):
+        if isinstance(m.get(k), dict) and m[k].get("reason"):
+            m[k]["reason"] = no_dollars(m[k]["reason"], r)
+    if isinstance(m.get("composite"), dict) and m["composite"].get("excluded_reason"):
+        m["composite"]["excluded_reason"] = no_dollars(m["composite"]["excluded_reason"], r)
+    return r
 
 
 def _db_version(con) -> float:
@@ -112,8 +143,19 @@ def _table(con, store: str, entity: str) -> list[dict]:
             if raw:
                 d = json.loads(raw)
                 meta[m] = {k: d.get(k) for k in keep if k in d}
+                if m in IDX and isinstance(d.get("parts"), list):   # compact ingredients: [percentile, raw value]
+                    meta[m]["p"] = [[x.get("pct"), x.get("raw")] for x in d["parts"]]
         out.append({"keyword": kw, "label": labels.get(kw, kw), "members": members.get(kw, []), "_hidden": bool((meta.get("composite") or {}).get("excluded")),
                     **vals, "meta": meta})
+    if entity == "topic":   # topic scores = its best member's (the member that sets the topic's grade)
+        kw = {r["keyword"]: r for r in _table(con, store, "keyword")}
+        for r in out:
+            b = kw.get(((r.get("meta") or {}).get("opp_score") or {}).get("best") or "")
+            if b:
+                for k in IDX:
+                    if b.get(k) is not None:
+                        r[k] = b[k]; r["meta"][k] = (b.get("meta") or {}).get(k)
+    out = [_scrub(r) for r in out]
     out.sort(key=lambda r: (r.get("opp_score") or 0, r.get("composite", -99)), reverse=True)
     _CACHE[key] = (ver, out)
     return out
@@ -144,6 +186,35 @@ def keywords(store: str = settings.store, limit: int = Query(300, le=20000), max
     return JSONResponse(out)
 
 
+@app.get("/api/explain")
+def explain(store: str = settings.store):
+    """What every number is made of: the index recipes (ingredients, weights, notes) and, for every numeric column,
+    101 cut points over all searches so the page can say "better than X% of searches" and draw the 5 blocks."""
+    from ..metrics.market_scores import SPECS
+    con = _con()
+    try:
+        table = _table(con, store, "keyword")
+    finally:
+        con.close()
+    hit = _CACHE.get(("explain", store))
+    if hit and hit[0] is table:
+        return JSONResponse(hit[1])
+    cols: dict[str, list[float]] = {}
+    for r in table:
+        for k, v in r.items():
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and not k.startswith("_"):
+                cols.setdefault(k, []).append(float(v))
+    quant = {}
+    for k, vs in cols.items():
+        vs.sort()
+        n = len(vs)
+        if n >= 20:
+            quant[k] = {"n": n, "q": [round(vs[min(n - 1, int(i / 100 * n))], 4) for i in range(101)]}
+    out = {"specs": {s.name: s.spec() for s in SPECS.values()}, "quant": quant}
+    _CACHE[("explain", store)] = (table, out)
+    return JSONResponse(out)
+
+
 def _full(con, entity_id: str, entity: str) -> dict:
     """Latest factor values and FULL meta for one entity (the list endpoint sends a slimmed meta)."""
     vals, meta = {}, {}
@@ -151,6 +222,7 @@ def _full(con, entity_id: str, entity: str) -> dict:
                                    QUALIFY row_number() OVER (PARTITION BY metric ORDER BY snapshot_date DESC)=1""", [entity, entity_id]).fetchall():
         vals[m] = v
         meta[m] = json.loads(mt) if mt else None
+    _scrub({**vals, "meta": meta})
     return {"factors": vals, "meta": meta}
 
 

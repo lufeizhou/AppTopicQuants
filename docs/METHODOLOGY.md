@@ -157,6 +157,25 @@ refitted curve into `config/model.toml`.
 Known biases: apps grown by paid ads are underestimated; free/ad-only apps are overestimated, because all
 anchors are apps that charge.
 
+**Scores shown instead of dollars (2026-11-06; ranked v4 2026-11-07).** Because single-app dollars are this rough,
+the dashboard shows four 0–100 indexes per search (`metrics/market_scores.py`), built by one recipe
+(`metrics/indexing.py`): each ingredient is ranked against all searches (percentile), the index is the weighted mean of
+those ranks, ranked again, shown as 5 blocks (fifths) and also ranked within the search's App Store category. Missing
+ingredients are left out (not zero) and the measured share is shown.
+
+| Index | Question | Ingredients (weight) |
+|---|---|---|
+| Popularity | do many people use these apps? | rivals' ratings per month (2) · rivals on top-free charts, rank-weighted (1) |
+| Paying | do users pay? | rivals on top-grossing charts, rank-weighted (2) · what the 5 biggest rivals charge per month (1) |
+| Momentum | is it growing now? | Apple search-popularity trend, 6 months (2) · Google search growth, 6 months (1) · rating pace vs lifetime (1, early) · young rivals (1) |
+| Search demand | how often is it searched? | Apple search popularity (2) · Google monthly searches (1) |
+
+> `ai calorie counter`: Paying 93 (rivals on top-grossing charts, best #1; leaders charge ~$26/month), better than
+> 97% of Health & Fitness searches. `habit tracker`: Search demand 90 but Momentum 24 (both Apple and Google searches
+> falling, rivals gain ratings at 0.72× their usual pace).
+
+The grade (Step 6) still uses the dollar model until its rule is redone with these scores.
+
 ### Step 4. Market numbers: is there room for us
 
 **In:** the sector, sorted by estimated revenue.

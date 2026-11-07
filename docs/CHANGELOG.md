@@ -576,6 +576,146 @@ merge leaves many near-duplicates.
 
 ---
 
+## 2026-11-06 · Step 3 review: what each app earns
+
+**Question (user):** can other sources (DataForSEO, the scrapers) give a better revenue estimate than US ratings per
+month? **Answer: no, not with what is public.** Nothing was changed in the model.
+
+**How it was checked.** Every app with verified revenue (TrustMRR / MobileMRR, 487 with a store profile, 44 earning
+$5k+/month) got extra signals; each signal set was scored like the existing hold-out (fit on 2/3, score 1/3, 20 splits).
+DataForSEO was not used: its app data has no revenue or downloads, only what Apple and Google show for free.
+
+| signal | source | cost | apps covered |
+|---|---|---|---|
+| in-app prices | Apple app page | free | 391 list prices |
+| recent reviews (30 / 90 days) | Apple review feed | free | 487 |
+| Android installs | Google Play | free | 130 on Play |
+| active Meta ads | ScrapeCreators | $2.02 | 71 run ads |
+| TikTok videos naming the app | ScrapeCreators | $1.12 | 487 |
+
+| method | within 3× | AUC $5k+ | top 10% flagged that earn $5k+ | 10× too low |
+|---|---|---|---|---|
+| today (ratings curve) | 57% | 0.77 | 35% | 9% |
+| + in-app prices | 57% | 0.79 | 36% | 6% |
+| + recent reviews | 58% | 0.78 | 35% | 5% |
+| + Google Play | 59% | 0.80 | 39% | 6% |
+| + Meta ads | 58% | 0.78 | 33% | 6% |
+| + TikTok | 58% | 0.78 | 34% | 6% |
+| everything | 61% | 0.78 | 37% | 5% |
+| curve + app-age correction | 57% | 0.79 | 33% | 6% |
+
+**Why nothing helps:** the big misses look ordinary on every public signal. Calyra (AI calorie tracker, $72k/month,
+151 ratings): not on Android, no Meta ads, normal prices ($10-50), 4 TikTok videos with ~2k views. Hairly AI ($22k):
+same, no TikTok. They likely grow through channels we cannot see (TikTok / Apple Search Ads ads, influencers).
+
+**Not applied:** a refit line (rises far slower than the curve for big apps: 300 ratings/month $12.7k → $4.9k, because
+big apps are rare among the anchors) and the age correction (would double older big apps). Gains are within noise
+with 44 positives. Google Play at scale would also need ~80k app lookups (~3 days) for a 2-point gain.
+
+Kept: the curve and P(≥ $5k), whose probabilities are honest. Data: `data/cache/rev_eval/`.
+
+### Round 2: scores instead of dollars (2026-11-06)
+
+**Decisions (user):** stop showing the dollar guess; build several 0–100 scores instead: Popularity, Paying,
+Momentum (shown, marked "early"). Marketing (Meta ads + TikTok) was tested and **dropped**. The grade rule stays on the
+dollar model until Step 6 redoes it; the dashboard hides the dollars meanwhile.
+
+| score | question | built from (real rivals in the top 20) |
+|---|---|---|
+| Popularity | do many people use these apps? | total ratings per month: 30 → 0, 300,000 → 100 (log; median search ~66) |
+| Paying | do users pay? | share selling a subscription / premium (App Store in-app purchases), typical top price per month ($1 → 0, $60 → 100), rivals on a top-grossing chart (5 → 100) |
+| Momentum (early) | growing now? | rating pace over our snapshots vs lifetime pace, share of rivals under 1 year old |
+
+Test (15 searches, 5 per grade): every C scored Popularity < 50, every A and B ≥ 69; Paying is low for C and for
+markets without subscriptions (`vizio tv app`, `music theory games` 0). Neither separates A from B: B usually fails on
+search traffic, a separate grade check. Momentum is noise with 5 days of history (top: `pickleball scheduler`, a C).
+
+Marketing test (top 5 A searches, 97 apps): AI apps rarely run Meta ads (5–14% of rivals); TikTok search by app name
+is noisy for generic names ("AI Dance Generator"). Dropped. Apple's review feed was unreliable (150 reviews over
+6 months for Viggle), and Google Play matched almost none of the AI rivals: both left out.
+
+Changes: `metrics/market_scores.py` (`idx_popularity`, `idx_paying`, `idx_momentum`, no weight in the composite);
+`apptopics collect iap` (App Store prices for the top 20 apps of A+B searches, free, ~30 apps/minute, started for
+27,923 apps); dashboard shows the three scores (table, compare, detail, map "Ease × Paying"), grade reasons say
+"paying 81" instead of "p5-p20 apps earn ~$X/mo" and "~655 searches/day" instead of "popularity 56".
+Spend: $1.21 (Meta ads + TikTok on the top 5); ScrapeCreators cap raised to $10 for this month.
+
+**Paying v3 (user 2026-11-06):** the share of rivals selling a subscription was not convincing (small categories,
+diluted by free apps). Tested parts, typical value by grade (5,714 searches with prices):
+
+| part | A | B | C | used |
+|---|---|---|---|---|
+| A. rivals on a top-grossing chart, rank-weighted (#1 = 1, #10 = 0.57, #100 = 0.13; 2 = full) | 95 | 42 | 50 | **2/3** |
+| D. what the 5 biggest rivals charge per month ($1 → 0, $60 → 100) | 61 | 47 | 42 | **1/3** |
+| C. share of users (weighted by ratings) in apps that charge | 100 | 100 | 100 | no |
+| C'. same, subscription apps only | 52 | 68 | 74 | no |
+| Google CPC (median $) | 2.65 | 2.17 | 2.61 | no (~$2 for the rest; reflects web advertisers) |
+
+Apple's in-app purchase list is ordered by the developer, not by sales, so D is "what the leaders charge", not
+"best-seller". Result: Paying median A 75 · B 44 · C 48 (C includes brands and games with big grossing apps); the
+five "no money" C test searches score 7–23, `vizio tv app` 33 → 94 (rivals at #2 on a grossing chart).
+
+**Industry methods tested, none adopted (user: keep Paying v3).** Estimators (AppTweak, Sonar, MWM) build revenue on
+top-grossing rank × a per-category curve, or downloads × revenue per user; RevenueCat's category benchmarks are only in
+its paid report / own dashboard, and its API reads only your own apps. On the 487 known-revenue apps ($0):
+
+| method | within 3× | AUC $5k+ |
+|---|---|---|
+| ratings only (today) | 58% | 0.76 |
+| users × price | 57% | 0.75 |
+| ratings + price + category richness | 57% | 0.76 |
+
+Chart money (rank → $ with the category curve) could not be tested: only 2 known apps are on a grossing chart (one,
+Brawler: chart says $3k, real $46k), and the category curves are themselves built from the rating estimate.
+
+### Round 3: four indexes, ranked, with their parts on show (2026-11-07)
+
+**Decisions (user, 2026-11-07).** Every number on the dashboard shows what it is made of (hover; click for the full
+view). Indexes use percentiles ("better than X% of searches") shown as 5 blocks (fifths), recomputed on every rescore,
+ranked against all searches and within the search's App Store category. One general recipe for all indexes
+(`metrics/indexing.py`). Test four new ingredients before keeping them.
+
+**Method.** Each ingredient → mid-rank percentile among the searches that have it; index = weighted mean of the
+available ingredients' percentiles (missing ones drop out, weights rescaled; `coverage` = measured share of weight,
+below 50% no score; Momentum 40%), ranked again. Category = the App Store category holding most of the rivals' ratings;
+category ranks need ≥ 20 searches. Percentiles, not z-scores: plain to read, robust to a single giant app, no
+hand-picked 0/100 anchors (OECD/JRC composite-indicator handbook lists ranking among standard normalisations).
+
+| Index | Ingredients (weight) |
+|---|---|
+| Popularity | rivals' ratings/month (2) · rivals on a top-free chart, rank-weighted (1) **new** |
+| Paying | rivals on a top-grossing chart, rank-weighted (2) · leaders' monthly price (1) |
+| Momentum | Apple search-popularity slope, 6 months (2) **new** · Google volume growth/month, 6-month fit (1) **new** · rating pace vs lifetime (1) · young-rival share (1) |
+| Search demand **new index** | Apple search popularity (2) · Google monthly searches (1) |
+
+**Tests of the new ingredients** (all graded searches; grade C mixes brands with dead markets, so A/B vs C is a fair
+test only for Paying):
+
+| Ingredient | Result | Kept |
+|---|---|---|
+| Top-free chart | rank corr 0.73 with ratings/month: an independent measure of the same thing (Apple's download ranking) | yes |
+| Apple search trend | agrees with Google's trend over the same months (May→Sep change: 0.35; 6-month slopes: 0.27) | yes |
+| Google trend, last 6 vs prior 6 months | disagrees with Apple (−0.07): compares summer with winter (New Year) | replaced by the 6-month slope |
+| Category benchmark (RevenueCat revenue per install, D60) | published for 4 categories only (Health & Fitness $0.66, Business $0.50, Education $0.40, Games $0.14; rest = overall $0.34). Paying AUC 0.71 → 0.74, but without Games 0.69 → 0.70: the gain is just "games are low", which the hard rules already do | no |
+| Known-revenue check | 152 searches have a known-revenue rival (indie apps); Popularity 0.10, Paying −0.03 rank corr: small apps' own revenue says little about the market | (no truth set) |
+
+Paying AUC (A/B vs C): grossing 0.66, leaders' price 0.68, index 0.71. Momentum: coverage is thin: Apple trend for
+537 of 4,409 A/B searches (Apple lists only the top ~500 terms per genre), Google trend for 1,551.
+
+Example, `ai calorie counter`: Paying 93 ■■■■■ (top-grossing 2.26 points, 97% · leaders ~$26/month), within Health &
+Fitness 97. `habit tracker`: Search demand 90 ■■■■■ (Apple 56, Google 18,100/month) but Momentum 24 ■■□□□ (Apple
+−0.8 points per 3 months, Google −3%/month, rating pace 0.72×).
+
+**Dashboard.** Hover any index: its ingredients with blocks, percentile, raw value and weight; click a search: the four
+cards with where each number comes from. Every other number: value, "higher than X% of searches", blocks and what it
+means. Grade: reason + money/reach/demand parts. Searches/day: the formula with the search's own popularity. New
+"Search demand" column.
+
+**Not done (needs the user).** Checking searches/day against the user's own apps: App Store Connect sales reports
+hold downloads but not search counts; the analytics reports (impressions by source) must be requested first.
+
+---
+
 ## Backlog for later steps (found during Step 1)
 
 | Step | Item | Evidence |

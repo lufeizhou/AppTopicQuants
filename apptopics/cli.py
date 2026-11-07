@@ -471,6 +471,14 @@ def l_relevance(store: str = S, workers: int = 8, redo: bool = False):
     typer.echo(collect_llm_relevance(store, workers=workers, redo=redo))
 
 
+@collect.command("iap")
+def c_iap(store: str = S, grades: str = "A,B", top: int = 20):
+    """Step 3 Paying score: in-app prices from the App Store page for the top apps of every search in `grades`
+    (free, ~30 apps/minute, resumes). Run `apptopics score` after."""
+    from .pipeline.collect import collect_iap
+    typer.echo(collect_iap(store, grades=tuple(g.strip() for g in grades.split(",")), top=top))
+
+
 @llm.command("relevance-jev")
 def l_relevance_jev(store: str = S, workers: int = 16):
     """Step 2 base judge: TypeSafe Jev on every app without a Jev answer (all pages first time, new apps after).

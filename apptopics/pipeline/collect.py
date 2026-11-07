@@ -1041,3 +1041,46 @@ def finish_longtail(store: str = settings.store, min_pop: int = 15, max_search: 
     from .score import score_all
     counts = write_retry(lambda c: score_all(c, store))
     return {"terms": len(terms), "need": len(need), "with_popularity": len(have), "searched": n, "index": counts.get("index")}
+
+
+def collect_iap(store: str = settings.store, grades: tuple[str, ...] = ("A", "B"), top: int = 20, max_age_days: int = 30,
+                workers: int = 4, batch: int = 100) -> dict:
+    """In-app purchase prices (public App Store page) for the apps in the top `top` of every search graded `grades`,
+    for the Paying score (metrics/market_scores.py). Free; Apple's pages are rate-limited, so ~30 apps/minute
+    (A+B, top 20 = ~28,000 apps = ~16 hours). Saves every `batch` apps, skips apps checked in the last
+    `max_age_days`, so a stopped run resumes."""
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+
+    from ..db import connect_read_live
+    from ..sources.appstore_page import fetch_iap, period_of
+    from .discover import write_retry
+    con = connect_read_live()
+    try:
+        d = con.execute("SELECT max(snapshot_date) FROM factor_values WHERE entity_type='keyword' AND metric='opp_score'").fetchone()[0]
+        kws = [k for k, m in con.execute("SELECT entity_id, meta FROM factor_values WHERE entity_type='keyword' AND metric='opp_score' "
+                                         "AND snapshot_date=?", [d]).fetchall() if json.loads(m or "{}").get("grade") in grades]
+        ids = [a for (a,) in con.execute("""SELECT app_id FROM (SELECT app_id, min(rank) r FROM (SELECT app_id, rank FROM search_results
+                WHERE store=? AND keyword IN (SELECT unnest(?)) AND rank<=? QUALIFY dense_rank() OVER (PARTITION BY keyword ORDER BY snapshot_date DESC)=1)
+                GROUP BY 1) ORDER BY r""", [store, kws, top]).fetchall()]
+        fresh = {a for (a,) in con.execute("SELECT DISTINCT app_id FROM app_iap_checked WHERE store=? AND fetched_date >= ?::DATE - ?",
+                                           [store, today(), max_age_days]).fetchall()}
+    finally:
+        con.close()
+    todo = [a for a in ids if a not in fresh]
+    log.info("iap: %d searches, %d apps, %d to fetch", len(kws), len(ids), len(todo))
+    done = failed = 0
+    for i in range(0, len(todo), batch):
+        chunk = todo[i:i + batch]
+        with ThreadPoolExecutor(workers) as ex:
+            got = {a: r for a, r in zip(chunk, ex.map(lambda a: fetch_iap(a, store), chunk)) if r is not None}
+        failed += len(chunk) - len(got)
+        day = today()
+        write_retry(lambda c: (upsert(c, "app_iap", [{"store": store, "app_id": a, "position": x["position"], "item": x["item"],
+                                                       "price_usd": x["price_usd"], "period": period_of(x["item"], x["price_usd"]),
+                                                       "fetched_date": day} for a, xs in got.items() for x in xs]),
+                               upsert(c, "app_iap_checked", [{"store": store, "app_id": a, "fetched_date": day, "n_items": len(xs)}
+                                                             for a, xs in got.items()])))
+        done += len(got)
+        log.info("iap: %d/%d apps", min(i + batch, len(todo)), len(todo))
+    return {"searches": len(kws), "apps": len(ids), "fetched": done, "failed": failed, "already_fresh": len(ids) - len(todo)}

@@ -7,7 +7,7 @@
 [caps]
 deepseek = 15.0   # raised 2026-11-06 for the Step 2 relevance pass (user approved "all"); hybrid pass not run
 dataforseo = 30.0
-scrapecreators = 5.0
+scrapecreators = 10.0   # raised for the Step 3 index test (user 2026-11-06)
 jev = 10.0   # TypeSafe Jev (2026-11-06): $0.042 per M input tokens, output free
 total = 45.0
 

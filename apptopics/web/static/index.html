@@ -54,7 +54,11 @@ tbody tr{cursor:pointer}tbody tr:hover td{background:#F9FAFB}tr.sel td{backgroun
 .meter i{display:block;height:100%;border-radius:3px;background:var(--seq)}.bad i{background:#F59E0B}
 .i{display:inline-block;width:13px;height:13px;margin-left:5px;vertical-align:middle;position:relative;top:-1px;line-height:0;cursor:help;font-size:0;color:transparent;background:#9CA3AF;-webkit-mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='none' stroke='black' stroke-width='1.4'/><rect x='7.25' y='6.8' width='1.5' height='5' rx='.75'/><circle cx='8' cy='4.6' r='.95'/></svg>") center/contain no-repeat;mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='none' stroke='black' stroke-width='1.4'/><rect x='7.25' y='6.8' width='1.5' height='5' rx='.75'/><circle cx='8' cy='4.6' r='.95'/></svg>") center/contain no-repeat}
 .i:hover{background:var(--text)}
-#tip{position:fixed;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.45;display:none;box-shadow:0 8px 24px rgba(17,24,39,.14);z-index:100;max-width:320px;color:var(--text)}
+#tip{position:fixed;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.45;display:none;box-shadow:0 8px 24px rgba(17,24,39,.14);z-index:100;max-width:380px;color:var(--text)}
+.blk{display:inline-flex;gap:2px;vertical-align:middle;margin-right:6px}.blk i{width:7px;height:9px;border-radius:2px;background:var(--line)}.blk i.on{background:var(--seq)}
+.xp{border-collapse:collapse;margin-top:6px;width:100%}.xp td{padding:3px 6px 3px 0;vertical-align:top;font-size:12px}.xp td.w{color:var(--text-2);white-space:nowrap}.xp tr.miss td{color:var(--text-2)}
+.xp .nt{display:block;font-size:11px;color:var(--text-2)}.xph{font-size:12px;color:var(--text-2);margin-top:6px}
+.idxcard{border:1px solid var(--line-2);border-radius:10px;padding:10px 12px;margin:10px 0}.idxcard h4{margin:0;font-size:14px}
 .grade{display:inline-block;min-width:18px;font-weight:700}
 .gb{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:7px;font-weight:700;font-size:12px;margin-right:7px;background:#F3F4F6;color:#374151}
 .gb.gA{background:var(--blue-d);color:#fff}.gb.gB{background:#DBEAFE;color:var(--blue-dd)}.gb.gC{background:#F3F4F6;color:#374151}.gb.gD,.gb.gE{background:#fff;color:var(--muted);border:1px solid var(--line)}.gb.gQ{background:#fff;color:var(--text-2);border:1px dashed #9CA3AF}
@@ -191,7 +195,7 @@ tr.ksel{cursor:pointer}tr.ysel td{background:#F5F9FF}
    <div id="fpop">
     <div class="row"><span>Min popularity</span><input id="pop" type="number" min="5" max="100" value="5" style="width:72px"></div>
     <div class="row"><span>Rows per page</span><select id="limit"><option>50</option><option selected>100</option><option>300</option></select></div>
-    <div class="row"><label class="chk"><input id="more" type="checkbox"> All columns (difficulty, trend, P(≥$5k), newcomers…)</label></div>
+    <div class="row"><label class="chk"><input id="more" type="checkbox"> All columns (difficulty, trend, newcomers…)</label></div>
     <div class="row"><button id="freset">Reset</button><button class="primary" id="fdone">Done</button></div>
    </div>
   </div>
@@ -202,8 +206,8 @@ tr.ksel{cursor:pointer}tr.ysel td{background:#F5F9FF}
   <div class="mainc">
    <section class="card">
     <div class="maphead"><h2 id="maptitle">Where money is easy to reach</h2>
-     <span style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><div class="seg" id="mapview"><button data-m="mr" class="on">Ease × Money</button><button data-m="dp">Difficulty × Popularity</button></div>
-     <span class="i" data-tip="<b>Ease × Money</b>: the two halves of the opportunity score. Up = what p5–p20 apps earn (log $), right = how likely a newcomer gets onto page one. Shows only Build now and Watch ideas.<br><b>Difficulty × Popularity</b>: the whole market as it looks (how hard, how searched).">i</span>
+     <span style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><div class="seg" id="mapview"><button data-m="mr" class="on">Ease × Paying</button><button data-m="dp">Difficulty × Popularity</button></div>
+     <span class="i" data-tip="<b>Ease × Paying</b>: up = Paying score (do users pay in this market?), right = how likely a newcomer gets onto page one. Shows only Build now and Maybe ideas.<br><b>Difficulty × Popularity</b>: the whole market as it looks (how hard, how searched).">i</span>
      <label class="chk" id="maplogwrap" style="display:none"><input id="maplog" type="checkbox"> Log scale<span class="i" data-tip="Spreads out the crowded hard end of the difficulty axis (plots −log(101 − difficulty)).">i</span></label></span></div>
     <div class="legend" id="maplegend"></div>
     <div id="map"></div>
@@ -258,15 +262,48 @@ const n0=v=>v==null?"–":Math.round(v).toLocaleString(),pc=v=>v==null?"–":Mat
 const spd=p=>p?70*Math.pow(1.15,p-40):0;
 const info=t=>`<span class="i" data-tip="${esc(t)}">i</span>`;
 
+/* ---------- what every number is made of (2026-11-07): ingredients, percentiles, 5 blocks ---------- */
+let EXP={specs:{},quant:{}};
+const KIND={int:v=>Math.round(v).toLocaleString(),num2:v=>v.toFixed(2),num1s:v=>(v>=0?"+":"")+v.toFixed(1),usd:v=>"$"+v.toFixed(2),
+ pct:v=>Math.round(v*100)+"%",pct1s:v=>(v>=0?"+":"")+(v*100).toFixed(1)+"%",times:v=>v.toFixed(2)+"×"};
+const ingText=(g,v)=>v==null?"not measured":(v===0&&g.zero)?g.zero:g.pre+(KIND[g.kind]||KIND.num2)(v)+g.post;
+const nBlk=p=>p==null?0:Math.max(1,Math.min(5,Math.floor(p/20)+1));
+const blk=p=>p==null?"":`<span class="blk" aria-label="${nBlk(p)} of 5">${[1,2,3,4,5].map(i=>`<i class="${i<=nBlk(p)?"on":""}"></i>`).join("")}</span>`;
+function pctOf(k,v){const q=EXP.quant[k];if(!q||v==null)return null;let lt=0,le=0;for(const x of q.q){if(x<v)lt++;if(x<=v)le++}return 100*((lt+le)/2)/q.q.length}
+const fifth=p=>["bottom 20%","lower 20–40%","middle 40–60%","upper 60–80%","top 20%"][nBlk(p)-1];
+/* an index (Popularity, Paying, Momentum, Search demand): every ingredient with its rank among all searches */
+function explainIdx(r,k,long){const sp=EXP.specs[k],m=r.meta?.[k]||{},v=r[k];if(v==null)return(sp?`<b>${sp.label}</b>: not measured yet`:"not measured yet");
+ if(!sp)return esc(m.why||"");
+ const raw=m.p||(Array.isArray(m.parts)?m.parts.map(x=>[x.pct,x.raw]):[]);
+ let h=`<b>${sp.label} ${Math.round(v)}</b> ${blk(v)}<span class="muted">${sp.question}</span><div class="xph">Better than ${Math.round(v)}% of ${(m.n||0).toLocaleString()} searches (${fifth(v)})`+
+  (m.value_cat!=null&&m.category?` · within ${esc(m.category)}: better than ${Math.round(m.value_cat)}%`:"")+`</div><table class="xp">`;
+ sp.ingredients.forEach((g,i)=>{const[p,x]=raw[i]||[null,null];
+  h+=`<tr class="${p==null?"miss":""}"><td>${esc(g.label)}<span class="nt">weight ${Math.round(g.weight*100)}%</span></td><td>${p==null?"":blk(p)}</td><td class="w">${p==null?"–":Math.round(p)+"%"}</td><td>${esc(ingText(g,x))}${long?`<span class="nt">${esc(g.note)}</span>`:""}</td></tr>`});
+ h+=`</table>`;
+ if(m.coverage!=null&&m.coverage<1)h+=`<div class="xph">Only ${Math.round(m.coverage*100)}% of the weight is measured: missing parts are left out, not counted as zero.</div>`;
+ if(k==="idx_momentum"&&m.early)h+=`<div class="xph">Rating pace is early: under 4 weeks of our own snapshots.</div>`;
+ h+=`<div class="xph">Each part is ranked against all searches (%: share of searches it beats). The score is the weighted average of those ranks, ranked again. Blocks = which fifth.</div>`;
+ return h}
+/* any other number: what it is, its value and how it ranks among all searches */
+function explainNum(k,v,label,txt){const p=pctOf(k,v);
+ return`<b>${esc(label||k)}: ${esc(txt??(v==null?"–":(+v).toFixed(2)))}</b> ${blk(p)}`+(p!=null?`<div class="xph">Higher than ${Math.round(p)}% of ${EXP.quant[k].n.toLocaleString()} searches (${fifth(p)})</div>`:"")+(TIP[k]?`<div class="xph">${TIP[k]}</div>`:"")}
+const spdTip=r=>{const om=r.meta?.opp_score||{};if(r.members?.length)return`All searches in this idea added up: ~${n0(SPD(r))}/day.<div class="xph">Each search: Apple popularity P → 70 × 1.15^(P − 40) searches/day. A rule of thumb, not checked against real counts yet.</div>`;
+ return r.demand?`<b>~${n0(SPD(r))} searches/day</b><div class="xph">Apple search popularity ${Math.round(r.demand)} → 70 × 1.15^(${Math.round(r.demand)} − 40). A rule of thumb (each popularity point ≈ +15% searches), not checked against real counts yet.</div>`:"No Apple popularity for this search."};
+fetch("/api/explain").then(x=>x.json()).then(j=>{EXP=j;if(typeof render==="function"&&rows.length)render()}).catch(()=>{});
+
 /* ---------- plain-language explanations ---------- */
 const TIP={
  keyword:"The App Store search term (our 'ticker').",
- opp_score:"<b>New-app opportunity</b>, 0–100. 100 × money^0.45 × reach^0.35 × demand^0.20, adjusted for concentration, buildability and trend. The score only orders searches inside a grade. <b>Grades are evidence checks</b>: <b>A · Build now</b> (can earn): p5–p20 apps earn $5k+/month, 2+ apps under 2 years old earn $5k+, popularity ≥ 30 (~17 searches/day) and judged buildable. <b>B · Maybe</b>: money exists but a check fails. <b>? · Not sure</b>: the market cannot be measured yet (too few apps serve it). <b>C · No</b>: no money, hard to build, or a brand/junk search. <b>–</b> No data: results page not fetched yet.",
+ opp_score:"<b>New-app opportunity</b>, 0–100. 100 × money^0.45 × reach^0.35 × demand^0.20, adjusted for concentration, buildability and trend. The score only orders searches inside a grade. <b>Grades are evidence checks</b>: <b>A · Build now</b> (can earn): rivals clearly make money, 2+ young apps are earning well, popularity ≥ 30 (~17 searches/day) and judged buildable. <b>B · Maybe</b>: money exists but a check fails. <b>? · Not sure</b>: the market cannot be measured yet (too few apps serve it). <b>C · No</b>: no money, hard to build, or a brand/junk search. <b>–</b> No data: results page not fetched yet.",
  aso_score:"<b>ASO keyword</b>, 0–100: should an app already in this space target this keyword? Searches/day × how many top-10 spots are weak. <b>Target now</b> = ≥3 weak spots; <b>Later</b> = needs ratings first.",
  demand:"Apple search popularity, 5–100 (Apple Ads; Astro for long-tail). Roughly 70 searches/day at 40, ×1.15 per point (≈280/day at 50, ≈1,150 at 60).",
  trending:"Change in Apple popularity this week vs the weeks it was seen in the previous 12. ▲ rising, ▼ falling.",
  difficulty:"0–100: how hard it is to reach page one (size, maturity and dominance of the top results). Reach falls to 50% around 70.",
  weak_spots:"Top-10 results with fewer than 100 ratings. Each is a spot a brand-new app can realistically take.",
+ idx_popularity:"<b>Popularity</b>, 0–100: do many people use the apps that compete for this search? Ranked against all searches: 80 = more popular than 80%. Made of the rivals' ratings per month (2/3) and their places on Apple's top-free charts (1/3). Hover a cell for the parts.",
+ idx_paying:"<b>Paying</b>, 0–100: do users pay in this market? Ranked against all searches. Made of the rivals' places on Apple's top-grossing charts (2/3, Apple ranks them by money) and what the 5 biggest rivals charge per month (1/3). Blank until the leaders' prices are fetched.",
+ idx_momentum:"<b>Momentum</b>, 0–100: is it growing now? Ranked against all searches. Made of Apple's search-popularity trend over 6 months (2/5), Google's search trend over 6 months (1/5), how fast rivals gain ratings now vs their lifetime pace (1/5, <b>early</b>: days of history) and the share of young rivals (1/5).",
+ idx_demand:"<b>Search demand</b>, 0–100: how often people search for it, ranked against all searches. Made of Apple search popularity (2/3) and Google monthly searches (1/3).",
  attainable:"Median monthly revenue of the apps ranked 5th–20th percentile in this market (calibrated on 487 verified-revenue apps). What a solid newcomer could earn without being #1.",
  breadth:"Probability that an app in this market earns ≥ $5k/month, averaged over the market's apps (accounts for estimate uncertainty).",
  concentration:"Share of the market's revenue held by its top 5% of apps. High = winner-takes-all.",
@@ -285,11 +322,11 @@ const TIP={
  search_volume:"Google monthly searches (log10), when DataForSEO is enabled.",cpc:"Google Ads cost per click (USD), when DataForSEO is enabled.",
  trend_slope:"Google Trends 12-month change, when enabled.",
  play_grossing:"Share of Google Play top-10 apps on a Play top-grossing list.",play_iap_share:"Share of Google Play top-10 apps that charge.",llm_appeal:"Simulated consumer panel: willingness to try and pay (0–1)."};
-const CORE=[["keyword","Keyword"],["opp_score","Opportunity"],["aso_score","ASO"],["demand","Popularity",true],["trending","Trend",true],["difficulty","Difficulty",false],
- ["weak_spots","Weak spots",true],["attainable","p5–p20 $/mo",true],["breadth","P(≥$5k)",true],["concentration","Top-5% share",false],["entrant_share","Newcomers",true],["indie_share","Indie",true],["buildability","Buildable",true]];
-const MORE=[["intent","Relevant",true],["composite","Model score",null],["competition","Competition",false],["brandness","Brandness",false],["monetization","Market $ (log)",true],["momentum","Momentum",true],
+const CORE=[["keyword","Keyword"],["opp_score","Opportunity"],["aso_score","ASO"],["demand","Search popularity",true],["trending","Trend",true],["difficulty","Difficulty",false],
+ ["weak_spots","Weak spots",true],["idx_popularity","Popularity",true],["idx_paying","Paying",true],["idx_momentum","Momentum",true],["idx_demand","Search demand",true],["concentration","Top-5% share",false],["entrant_share","Newcomers",true],["indie_share","Indie",true],["buildability","Buildable",true]];
+const MORE=[["intent","Relevant",true],["composite","Model score",null],["competition","Competition",false],["brandness","Brandness",false],["momentum","Momentum",true],
  ["review_neg_share","Neg. reviews",true],["review_gap","Review gap",true],["play_review_gap","Play gap",true],["search_volume","G volume",true],["cpc","CPC $",true],["trend_slope","G trend",true],["play_grossing","Play grossing",true],["play_iap_share","Play IAP",true],["llm_appeal","LLM appeal",true]];
-const RANGE={trending:[-10,10],demand:[20,80],difficulty:[0,100],weak_spots:[0,10],breadth:[0,0.6],concentration:[0,1],entrant_share:[0,1],indie_share:[0,1],buildability:[0,1],intent:[0,1],
+const RANGE={idx_demand:[0,100],idx_popularity:[0,100],idx_paying:[0,100],idx_momentum:[0,100],trending:[-10,10],demand:[20,80],difficulty:[0,100],weak_spots:[0,10],breadth:[0,0.6],concentration:[0,1],entrant_share:[0,1],indie_share:[0,1],buildability:[0,1],intent:[0,1],
  competition:[0,6],brandness:[0,1],monetization:[0,8],momentum:[-30,30],composite:[-4,12],review_neg_share:[0,0.6],review_gap:[0,1],play_review_gap:[0,1],search_volume:[0,6],cpc:[0,5],trend_slope:[-1,1],play_grossing:[0,1],play_iap_share:[0,1],llm_appeal:[0,1]};
 
 /* ---------- tooltip ---------- */
@@ -312,15 +349,24 @@ const SPD=r=>r.meta?.opp_score?.searches_per_day??(r.demand?spd(r.demand):null);
 const USD=r=>r.meta?.attainable?.attainable_usd;
 const PARTS=r=>r.meta?.opp_score?.parts||{};
 const diffWord=v=>v==null?"":v<40?"easy":v<60?"medium":v<75?"hard":"very hard";
+function gradeTip(r,k){const m=r.meta?.[k]||{},v=r[k],p=pctOf(k,v);
+ let h=`<b>${k==="aso_score"?"ASO":"Verdict"} ${m.grade||"–"} · ${esc(m.action||"")} · score ${Math.round(v)}</b> ${blk(p)}<div class="xph">${esc(m.reason||"")}</div>`;
+ const pp=k==="opp_score"?m.parts:null;
+ if(pp&&pp.money!=null){h+=`<table class="xp">`+[["Money","money","do rivals earn? (still the dollar model until Step 6)",0.45],["Reach","reach","how likely a newcomer gets onto page one",0.35],["Demand","demand","how many people search",0.20]].map(([l,key,d,w])=>
+  `<tr><td>${l}<span class="nt">weight ${Math.round(w*100)}%</span></td><td>${blk(pp[key]*100)}</td><td class="w">${pp[key].toFixed(2)}</td><td>${d}</td></tr>`).join("")+`</table><div class="xph">Score = 100 × money^0.45 × reach^0.35 × demand^0.20, then adjusted for concentration, buildability and trend. The grade is set by evidence checks; the score orders searches inside a grade.</div>`}
+ if(p!=null)h+=`<div class="xph">Score higher than ${Math.round(p)}% of searches.</div>`;
+ return h}
 function gradeHtml(r,k){const m=r.meta?.[k]||{};const v=r[k];if(v==null)return"<span class='muted'>–</span>";
- return`<span data-tip="${esc(m.reason||"")}" style="display:inline-flex;align-items:center"><span class="gb g${(m.grade||"E").replace("?","Q").replace("-","Q")}">${m.grade||"–"}</span><span class="sc">${Math.round(v)}</span><span class="pill ${actCls(m.action)}">${esc(m.action||"")}</span></span>`}
-function cell(r,k,hib){const v=r[k];
+ return`<span data-tip="${esc(gradeTip(r,k))}" style="display:inline-flex;align-items:center"><span class="gb g${(m.grade||"E").replace("?","Q").replace("-","Q")}">${m.grade||"–"}</span><span class="sc">${Math.round(v)}</span><span class="pill ${actCls(m.action)}">${esc(m.action||"")}</span></span>`}
+function cell(r,k,hib,label){const v=r[k];
  if(v==null)return"<span class='muted'>–</span>";
  let txt;if(k==="demand"||k==="difficulty"||k==="weak_spots")txt=Math.round(v);
  else if(["breadth","concentration","entrant_share","indie_share","buildability","intent"].includes(k))txt=Math.round(v*100)+"%";
  else if(k==="trending"){const t=Math.round(v);txt=(t>0?"+":"")+t}else txt=Number.isInteger(v)?v:v.toFixed(2);
  const[lo,hi]=RANGE[k]||[0,1];const p=Math.max(0,Math.min(1,(v-lo)/(hi-lo)))*100;
- return`<span class="meter ${hib===false?'bad':''}"><i style="width:${p}%"></i></span>`+txt}
+ return`<span data-tip="${esc(explainNum(k,v,label||k,String(txt)))}"><span class="meter ${hib===false?'bad':''}"><i style="width:${p}%"></i></span>${txt}</span>`}
+function idxCell(r,k){const v=r[k];if(v==null)return"<span class='muted' data-tip='not measured yet'>–</span>";const m=r.meta?.[k]||{};
+ return`<span data-tip="${esc(explainIdx(r,k))}">${blk(v)}${Math.round(v)}${k==="idx_momentum"&&m.early?"<span class='muted' style='font-size:10px'> early</span>":""}</span>`}
 /* columns: id = the row field used for sorting where one exists */
 const COL={
  keyword:{l:()=>topicMode()?"Idea":"Keyword",tip:()=>topicMode()?"An app idea: a group of similar searches.":TIP.keyword,val:r=>(r.label||r.keyword).toLowerCase(),
@@ -329,17 +375,20 @@ const COL={
    return`<div class="nm">${hid?'<span class="tag">hidden</span>':""}${esc(r.label||r.keyword)}${ownTag(r.keyword)}</div>${line2?`<div class="sm" title="${esc(line2)}">${line2}</div>`:""}`}},
  opp_score:{l:()=>mode==="aso"?"New app":"Verdict",tip:()=>TIP.opp_score,val:r=>r.opp_score==null?null:(GO[r.meta?.opp_score?.grade]||0)*1000+r.opp_score,fmt:r=>gradeHtml(r,"opp_score")},
  aso_score:{l:()=>"ASO",tip:()=>TIP.aso_score,val:r=>r.aso_score,fmt:r=>gradeHtml(r,"aso_score")},
- spd:{l:()=>"Searches / day",tip:()=>"Estimated App Store searches a day (from Apple popularity). Topics: all their searches added up.",val:SPD,fmt:r=>n0(SPD(r)),num:1},
- attainable:{l:()=>"Small apps earn",tip:()=>TIP.attainable,val:USD,fmt:r=>USD(r)!=null?"$"+n0(USD(r))+"<span class='muted'>/mo</span>":"–",num:1},
+ spd:{l:()=>"Searches / day",tip:()=>"Estimated App Store searches a day (from Apple popularity). Topics: all their searches added up.",val:SPD,fmt:r=>`<span data-tip="${esc(spdTip(r))}">${n0(SPD(r))}</span>`,num:1},
+ idx_popularity:{l:()=>"Popularity",tip:()=>TIP.idx_popularity,val:r=>r.idx_popularity,fmt:r=>idxCell(r,"idx_popularity"),num:1},
+ idx_paying:{l:()=>"Paying",tip:()=>TIP.idx_paying,val:r=>r.idx_paying,fmt:r=>idxCell(r,"idx_paying"),num:1},
+ idx_momentum:{l:()=>"Momentum",tip:()=>TIP.idx_momentum,val:r=>r.idx_momentum,fmt:r=>idxCell(r,"idx_momentum"),num:1},
+ idx_demand:{l:()=>"Search demand",tip:()=>TIP.idx_demand,val:r=>r.idx_demand,fmt:r=>idxCell(r,"idx_demand"),num:1},
  weak_spots:{l:()=>"Open spots",tip:()=>TIP.weak_spots,val:r=>r.weak_spots,fmt:r=>r.weak_spots==null?"<span class='muted'>–</span>":Math.round(r.weak_spots)+"<span class='muted'> / 10</span>",num:1},
- mrd:{l:()=>"Score parts",tip:()=>"The three parts of the opportunity score, 0–1 each: what small apps earn, how likely a newcomer gets in, how many people search.",val:r=>PARTS(r).money,
+ mrd:{l:()=>"Score parts",tip:()=>"The three parts of the opportunity score, 0–1 each: money, how likely a newcomer gets in, how many people search.",val:r=>PARTS(r).money,
   fmt:r=>{const p=PARTS(r);return p.money==null?"<span class='muted'>–</span>":`<span class="mrd" data-tip="money ${p.money?.toFixed(2)} · reach ${p.reach?.toFixed(2)} · demand ${p.demand?.toFixed(2)}"><i style="height:${Math.round(p.money*100)}%"></i><i style="height:${Math.round(p.reach*100)}%"></i><i style="height:${Math.round(p.demand*100)}%"></i></span>`}},
 };
-for(const [k,l,hib] of [...CORE,...MORE])if(!COL[k])COL[k]={l:()=>l,tip:()=>TIP[k]||"",val:r=>r[k],fmt:r=>cell(r,k,hib),num:1};
-const OPP_COLS=["keyword","opp_score","spd","attainable","weak_spots","mrd"];
+for(const [k,l,hib] of [...CORE,...MORE])if(!COL[k])COL[k]={l:()=>l,tip:()=>TIP[k]||"",val:r=>r[k],fmt:r=>cell(r,k,hib,l),num:1};
+const OPP_COLS=["keyword","opp_score","spd","idx_demand","idx_popularity","idx_paying","idx_momentum","weak_spots"];
 const ASO_COLS=["keyword","aso_score","opp_score","spd","difficulty","weak_spots","trending"];
 function curCols(){const base=mode==="aso"?ASO_COLS:OPP_COLS;if(!$("#more").checked)return base;
- return base.concat([...CORE,...MORE].map(c=>c[0]).filter(k=>!base.includes(k)&&k!=="attainable"))}
+ return base.concat([...CORE,...MORE].map(c=>c[0]).filter(k=>!base.includes(k)))}
 let loadSeq=0;
 async function load(){const aso=mode==="aso",my=++loadSeq;
  const p=new URLSearchParams({limit:aso?5000:20000,min_popularity:$("#pop").value,include_excluded:$("#excl").checked,entity:aso?"keyword":$("#entity").value});
@@ -386,7 +435,7 @@ function compare(){const sel_=[...cmp].map(k=>rows.find(r=>r.keyword===k)).filte
   ["Popularity",r=>n0(r.demand),r=>r.demand,1],["Searches/day",r=>om(r).searches_per_day!=null?n0(om(r).searches_per_day):n0(spd(r.demand)),r=>om(r).searches_per_day??spd(r.demand),1],
   ["Trend",r=>r.trending==null?"–":(r.trending>0?"+":"")+r.trending.toFixed(1),r=>r.trending,1],
   ["Difficulty",r=>n0(r.difficulty),r=>r.difficulty,-1],["Weak spots",r=>r.weak_spots==null?"–":r.weak_spots+"/10",r=>r.weak_spots,1],
-  ["p5–p20 earns",r=>usd(r)!=null?"$"+n0(usd(r))+"/mo":"–",r=>usd(r),1],["P(app ≥ $5k)",r=>pc(r.breadth),r=>r.breadth,1],
+  ["Popularity",r=>r.idx_popularity!=null?n0(r.idx_popularity):"–",r=>r.idx_popularity,1],["Paying",r=>r.idx_paying!=null?n0(r.idx_paying):"–",r=>r.idx_paying,1],["Momentum",r=>r.idx_momentum!=null?n0(r.idx_momentum):"–",r=>r.idx_momentum,1],["Search demand",r=>r.idx_demand!=null?n0(r.idx_demand):"–",r=>r.idx_demand,1],
   ["Top-5% share",r=>pc(r.concentration),r=>r.concentration,-1],["Newcomers",r=>pc(r.entrant_share),r=>r.entrant_share,1],
   ["Buildable",r=>pc(r.buildability),r=>r.buildability,1],["ASO",r=>r.aso_score!=null?`<span class="grade">${r.meta?.aso_score?.grade||""}</span>${n0(r.aso_score)}`:"–",r=>r.aso_score,1],
   ["Searches in topic",r=>om(r).n_members!=null?`${om(r).n_members} (${om(r).n_strong} A/B)`:"–",r=>om(r).n_members,1],
@@ -425,46 +474,45 @@ function showOwn(){const a=OWN.find(x=>x.name===ownSel);if(!a)return;
 const ACOL={"Build now":"#2563EB","Maybe":"#FBBF24"};
 function drawMR(){
  const W=Math.max(480,$("#map").clientWidth||1000),H=380,m={l:60,r:18,t:16,b:40};
- const ok=r=>r.meta?.opp_score?.parts?.reach!=null&&r.meta?.attainable?.attainable_usd>0;
+ const ok=r=>r.meta?.opp_score?.parts?.reach!=null&&r.idx_paying!=null;
  const hid=r=>!!r.meta?.composite?.excluded,act=r=>r.meta?.opp_score?.action;
  let pts=rows.filter(r=>ok(r)&&!hid(r)&&(act(r)==="Build now"||act(r)==="Maybe"));const nAll=pts.length;
  if(!mapAll)pts=[...pts].sort((a,b)=>(b.opp_score||0)-(a.opp_score||0)).slice(0,MAPN);
  const hidPts=$("#excl").checked?rows.filter(r=>ok(r)&&hid(r)).slice(0,80):[];
  const nb=pts.filter(r=>act(r)==="Build now").length,nw=pts.length-nb;
  $("#mapall").textContent=nAll>MAPN?(mapAll?`Show only the top ${MAPN}`:`Show all ${nAll}`):"";
- $("#mapnote").textContent=pts.length?`${mapAll||nAll<=MAPN?"Showing":"Top "+pts.length+" by score:"} ${nb} Build now and ${nw} Maybe ${topicMode()?"ideas":"keywords"} (of ${rows.length.toLocaleString()} in the table)${hidPts.length?`, plus ${hidPts.length} hidden (dashed)`:""}. Dot size = searches per day. Hover a dot for its numbers, click it for details.`:"";
- if(!pts.length&&!hidPts.length){$("#map").innerHTML="<p class='sub' style='padding:30px 0'>No Build now or Maybe ideas for the current filter.</p>";return}
- const all=pts.concat(hidPts),usd=r=>r.meta.attainable.attainable_usd,reach=r=>r.meta.opp_score.parts.reach;
- const ly0=Math.log10(Math.max(500,Math.min(...all.map(usd))*0.8)),ly1=Math.log10(Math.max(...all.map(usd))*1.25);
- const x=v=>m.l+v*(W-m.l-m.r),y=v=>H-m.b-((Math.log10(v)-ly0)/(ly1-ly0))*(H-m.t-m.b);
+ $("#mapnote").textContent=pts.length?`${mapAll||nAll<=MAPN?"Showing":"Top "+pts.length+" by score:"} ${nb} Build now and ${nw} Maybe ${topicMode()?"ideas":"keywords"} (of ${rows.length.toLocaleString()} in the table)${hidPts.length?`, plus ${hidPts.length} hidden (dashed)`:""}. Dot size = searches per day. Searches whose rivals' prices are not fetched yet are left out. Hover a dot for its numbers, click it for details.`:"";
+ if(!pts.length&&!hidPts.length){$("#map").innerHTML="<p class='sub' style='padding:30px 0'>No Build now or Maybe ideas with a Paying score for the current filter (prices are still being fetched).</p>";return}
+ const pay=r=>r.idx_paying,reach=r=>r.meta.opp_score.parts.reach;
+ const x=v=>m.l+v*(W-m.l-m.r),y=v=>H-m.b-(v/100)*(H-m.t-m.b);
  const rad=r=>Math.max(3.5,Math.min(13,2+Math.sqrt((SPD(r)||0)/25)));
- let g=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Ideas by ease of entry and what small apps earn">`;
- const y5=Math.max(m.t,Math.min(H-m.b,y(5000)));
+ let g=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Ideas by ease of entry and how much users pay">`;
+ const y5=y(60);
  g+=`<rect x="${x(.5)}" y="${m.t}" width="${x(1)-x(.5)}" height="${Math.max(0,y5-m.t)}" fill="#EFF6FF"/>`;
  for(const v of [0,.25,.5,.75,1])g+=`<line class="ax" x1="${x(v)}" x2="${x(v)}" y1="${m.t}" y2="${H-m.b}"/><text x="${x(v)}" y="${H-m.b+16}" text-anchor="middle">${v===0?"hard":v===1?"easy":Math.round(v*100)+"%"}</text>`;
- for(const v of [500,1000,2000,5000,10000,20000,50000,100000,200000])if(Math.log10(v)>=ly0&&Math.log10(v)<=ly1)g+=`<line class="ax" x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${m.l-8}" y="${y(v)+4}" text-anchor="end">$${v>=1000?(v/1000)+"k":v}</text>`;
+ for(const v of [0,20,40,60,80,100])g+=`<line class="ax" x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${m.l-8}" y="${y(v)+4}" text-anchor="end">${v}</text>`;
  g+=`<line x1="${x(.5)}" x2="${x(.5)}" y1="${m.t}" y2="${H-m.b}" stroke="#CBD5E1" stroke-dasharray="4 4"/>`;
- if(Math.log10(5000)>ly0&&Math.log10(5000)<ly1)g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${y5}" y2="${y5}" stroke="#CBD5E1" stroke-dasharray="4 4"/><text class="zone" x="${m.l+8}" y="${y5-6}">$5k/month target</text>`;
- g+=`<text class="zone hi" x="${x(1)-10}" y="${m.t+18}" text-anchor="end">Easy to enter, pays well</text><text class="zone" x="${m.l+8}" y="${m.t+18}">Pays well, hard to enter</text>`;
- g+=`<text x="${(m.l+W-m.r)/2}" y="${H-6}" text-anchor="middle">Ease of entry for a new app →</text><text transform="translate(14 ${(m.t+H-m.b)/2}) rotate(-90)" text-anchor="middle">Small apps earn / month →</text>`;
- for(const r of hidPts)g+=`<circle data-k="${encodeURIComponent(r.keyword)}" cx="${x(reach(r)).toFixed(1)}" cy="${y(usd(r)).toFixed(1)}" r="${rad(r).toFixed(1)}" fill="none" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="2 2"/>`;
+ g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${y5}" y2="${y5}" stroke="#CBD5E1" stroke-dasharray="4 4"/><text class="zone" x="${m.l+8}" y="${y5-6}">Paying 60</text>`;
+ g+=`<text class="zone hi" x="${x(1)-10}" y="${m.t+18}" text-anchor="end">Easy to enter, users pay</text><text class="zone" x="${m.l+8}" y="${m.t+18}">Users pay, hard to enter</text>`;
+ g+=`<text x="${(m.l+W-m.r)/2}" y="${H-6}" text-anchor="middle">Ease of entry for a new app →</text><text transform="translate(14 ${(m.t+H-m.b)/2}) rotate(-90)" text-anchor="middle">Paying (do users pay?) →</text>`;
+ for(const r of hidPts)g+=`<circle data-k="${encodeURIComponent(r.keyword)}" cx="${x(reach(r)).toFixed(1)}" cy="${y(pay(r)).toFixed(1)}" r="${rad(r).toFixed(1)}" fill="none" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="2 2"/>`;
  for(const r of [...pts].sort((a,b)=>(act(a)==="Maybe"?0:1)-(act(b)==="Maybe"?0:1)||SPD(b)-SPD(a)))
-  g+=`<circle data-k="${encodeURIComponent(r.keyword)}" class="${sel===r.keyword?'sel':''}" cx="${x(reach(r)).toFixed(1)}" cy="${y(usd(r)).toFixed(1)}" r="${rad(r).toFixed(1)}" fill="${ACOL[act(r)]}"/>`;
+  g+=`<circle data-k="${encodeURIComponent(r.keyword)}" class="${sel===r.keyword?'sel':''}" cx="${x(reach(r)).toFixed(1)}" cy="${y(pay(r)).toFixed(1)}" r="${rad(r).toFixed(1)}" fill="${ACOL[act(r)]}"/>`;
  const placed=[];for(const r of pts.filter(r=>act(r)==="Build now").sort((a,b)=>(b.opp_score||0)-(a.opp_score||0)).slice(0,10)){
-  const lx=x(reach(r))+rad(r)+5,ly=y(usd(r))+4,txt=r.label||r.keyword,w=txt.length*6.4;
+  const lx=x(reach(r))+rad(r)+5,ly=y(pay(r))+4,txt=r.label||r.keyword,w=txt.length*6.4;
   if(lx+w>W-m.r||placed.some(p=>Math.abs(p.y-ly)<14&&lx<p.x+p.w&&p.x<lx+w))continue;placed.push({x:lx,y:ly,w});
   g+=`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" style="font-size:12px;fill:var(--text);paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round">${esc(txt)}</text>`}
  $("#map").innerHTML=g+"</svg>";
  $("#map").querySelectorAll("circle").forEach(c=>{const r=rows.find(z=>z.keyword===decodeURIComponent(c.dataset.k));const om=r.meta?.opp_score||{};
-  c.dataset.tip=`<b>${esc(r.label||r.keyword)}</b> · ${om.grade||"–"} ${Math.round(r.opp_score||0)} · ${esc(om.action||"")}${hid(r)?" (hidden)":""}<br>Small apps earn ≈ $${n0(usd(r))}/mo · ease ${Math.round(reach(r)*100)}% · ~${n0(SPD(r))} searches/day<br><span class="muted">${esc(om.reason||"")}</span>`;
+  c.dataset.tip=`<b>${esc(r.label||r.keyword)}</b> · ${om.grade||"–"} ${Math.round(r.opp_score||0)} · ${esc(om.action||"")}${hid(r)?" (hidden)":""}<br>Paying ${n0(pay(r))} · popularity ${r.idx_popularity!=null?n0(r.idx_popularity):"–"} · ease ${Math.round(reach(r)*100)}% · ~${n0(SPD(r))} searches/day<br><span class="muted">${esc(om.reason||"")}</span>`;
   c.onclick=()=>detail(r.keyword)})}
 let mapMode="mr",mapAll=false;const MAPN=60;
 document.addEventListener("click",e=>{if(e.target.id==="mapall"){e.preventDefault();mapAll=!mapAll;drawMap()}});
 const LEG_MR=`<span><i style="background:#2563EB"></i>Build now</span><span><i style="background:#FBBF24"></i>Maybe</span><span><i style="border:1.5px dashed #9CA3AF"></i>hidden</span><span>size = searches/day · labels = top 10</span>`;
-const LEG_DP=`<span>x = difficulty, y = popularity, size = what small apps earn</span><span><i style="background:var(--s1)"></i>rising ▲</span><span><i style="background:#9CA3AF"></i>flat</span><span><i style="background:var(--s2)"></i>falling ▼</span><span><i style="border:2.5px solid var(--text)"></i>grade A</span><span><i style="border:1.2px solid var(--text)"></i>grade B</span><span><i style="border:1.6px dashed var(--text-2)"></i>hidden</span>`;
+const LEG_DP=`<span>x = difficulty, y = search popularity, size = app Popularity score</span><span><i style="background:var(--s1)"></i>rising ▲</span><span><i style="background:#9CA3AF"></i>flat</span><span><i style="background:var(--s2)"></i>falling ▼</span><span><i style="border:2.5px solid var(--text)"></i>grade A</span><span><i style="border:1.2px solid var(--text)"></i>grade B</span><span><i style="border:1.6px dashed var(--text-2)"></i>hidden</span>`;
 function setMapMode(mm){mapMode=mm;document.querySelectorAll("#mapview button").forEach(x=>x.classList.toggle("on",x.dataset.m===mm));
  $("#maplogwrap").style.display=mm==="dp"?"":"none";$("#maplegend").innerHTML=mm==="dp"?LEG_DP:LEG_MR;
- $("#maptitle").textContent=mm==="dp"?"The whole market: difficulty and popularity":"Where money is easy to reach";drawMap();if(mm==="dp"){$("#mapnote").textContent="Every row in the table. Shaded = newcomer zone (difficulty under 55).";$("#mapall").textContent=""}}
+ $("#maptitle").textContent=mm==="dp"?"The whole market: difficulty and popularity":"Where paying users are easy to reach";drawMap();if(mm==="dp"){$("#mapnote").textContent="Every row in the table. Shaded = newcomer zone (difficulty under 55).";$("#mapall").textContent=""}}
 document.querySelectorAll("#mapview button").forEach(b=>b.onclick=()=>setMapMode(b.dataset.m));
 function drawMap(){if(!$("#v-opp").classList.contains("on"))return;if(mapMode==="mr")return drawMR();
  const W=Math.max(480,$("#map").clientWidth||1000),H=420,m={l:52,r:16,t:14,b:40};const pts=rows.filter(r=>r.difficulty!=null&&r.demand!=null);
@@ -473,7 +521,7 @@ function drawMap(){if(!$("#v-opp").classList.contains("on"))return;if(mapMode===
  const xmin=Math.max(0,Math.floor((Math.min(...pts.map(r=>r.difficulty))-3)/5)*5),xmax=100;
  const lg=$("#maplog").checked,tf=v=>lg?-Math.log10(101-Math.min(100,v)):v;
  const x=v=>m.l+((tf(v)-tf(xmin))/(tf(xmax)-tf(xmin)))*(W-m.l-m.r),y=v=>H-m.b-((v-ymin)/(ymax-ymin))*(H-m.t-m.b);
- const usd=r=>r.meta?.attainable?.attainable_usd??0,rad=r=>Math.max(2.5,Math.min(10,1.5+Math.sqrt(usd(r)/800)));
+ const usd=r=>r.idx_popularity??0,rad=r=>Math.max(2.5,Math.min(10,1.5+usd(r)/12));
  const col=r=>r.trending==null?"var(--muted)":r.trending>=2?"var(--s1)":r.trending<=-2?"var(--s2)":"var(--muted)";
  const gr=r=>r.meta?.opp_score?.grade,hid=r=>!!r.meta?.composite?.excluded;
  let g=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
@@ -500,10 +548,12 @@ function drawMap(){if(!$("#v-opp").classList.contains("on"))return;if(mapMode===
 function scoreBar(om){const p=om.parts;if(!p||p.score==null)return"";
  const row=(l,v,tip)=>`<div class="row"><span>${l}${info(tip)}</span><div class="bar"><i style="width:${Math.round((v||0)*100)}%"></i></div><span class="num">${(v||0).toFixed(2)}</span></div>`;
  const adj=(l,v,tip)=>`<b data-tip="${tip}">${l} ×${(v??1).toFixed(2)}</b>`;
- return`<div class="sbar"><div class="t">Why this score</div>${row("Money",p.money,"0–1: half from what p5–p20 apps earn ($1k → 0, $30k → 1, log), half from P(app ≥ $5k); plus Google CPC when known. Weight 0.45.")}${row("Reach",p.reach,"0–1: can a newcomer get in? Difficulty curve (0.5 at 70) + weak spots in the top 10 + share of recent entrants. Weight 0.35.")}${row("Demand",p.demand,"0–1: log of searches/day (1/day → 0, 2,000/day → 1), blended with Google volume. Weight 0.20.")}
+ return`<div class="sbar"><div class="t">Why this score</div>${row("Money",p.money,"0–1: from the earnings model (its dollar figures are hidden: too rough, see Paying and Popularity instead; the grade rule is being redone), plus Google CPC when known. Weight 0.45.")}${row("Reach",p.reach,"0–1: can a newcomer get in? Difficulty curve (0.5 at 70) + weak spots in the top 10 + share of recent entrants. Weight 0.35.")}${row("Demand",p.demand,"0–1: log of searches/day (1/day → 0, 2,000/day → 1), blended with Google volume. Weight 0.20.")}
  <div class="adj">Score = 100 × money<sup>0.45</sup> × reach<sup>0.35</sup> × demand<sup>0.20</sup> × ${adj("concentration",p.conc_adj,"1 when money is spread out, down to 0.5 when the top 5% take everything")} × ${adj("buildable",p.build_adj,"0.5–1 from DeepSeek buildability for a small team")} × ${adj("trend",p.trend_adj,"±15% from Apple weekly trend and Google Trends")}${p.uses_google?" · uses Google data":""}</div></div>`}
 function verdictBox(om,score){const a=actCls(om.action);
  return`<div class="verdict ${a}"><span class="big">${om.grade||"–"}</span><div><b>${esc(om.action||"No verdict")}${score!=null?` · score ${Math.round(score)}`:""}</b><div class="why">${esc(om.reason||"")}</div></div></div>`}
+function idxCards(r){const ks=["idx_demand","idx_popularity","idx_paying","idx_momentum"].filter(k=>EXP.specs[k]);
+ return ks.length?`<h3 style="margin:14px 0 0">What the market looks like</h3>`+ks.map(k=>`<div class="idxcard">${explainIdx(r,k,true)}</div>`).join(""):""}
 function tiles(list){return`<div class="tiles4">${list.map(([l,v,x,t])=>`<div><span>${l}${t?info(t):""}</span><b>${v}${x?`<em>${x}</em>`:""}</b></div>`).join("")}</div>`}
 let lastTab={};
 function tabs(kind,panes){panes=panes.filter(p=>p);const want=lastTab[kind]&&panes.some(p=>p[0]===lastTab[kind])?lastTab[kind]:panes[0][0];
@@ -519,11 +569,12 @@ async function topicDetail(r){const d=await(await fetch("/api/keyword/"+encodeUR
  let h=`<div class="kicker">Idea · ${n0(om.n_members)} searches${hm.length?` · +${hm.length} hidden`:""}</div><h2>${esc(r.label||r.keyword)}${om.hidden?' <span class="tag">hidden</span>':''}</h2>`;
  if(om.hidden)h+=`<p class="sub" style="font-size:13px">Every search in this idea fails a hard rule (${esc(om.hidden_kinds||"")}). Shown for curiosity, not as an app idea.</p>`;
  h+=verdictBox(om,r.opp_score);
- h+=tiles([["Searches / day",n0(om.searches_per_day),"","All searches in this idea added up."],["Small apps earn",r.meta?.attainable?.attainable_usd!=null?"$"+n0(r.meta.attainable.attainable_usd):"–","/mo",TIP.attainable+" (for the best search)"],
+ h+=tiles([["Searches / day",n0(om.searches_per_day),"","All searches in this idea added up."],
   ["Difficulty",n0(r.difficulty),diffWord(r.difficulty),"Easiest search in the idea. "+TIP.difficulty],["Open spots in top 10",r.weak_spots==null?"–":Math.round(r.weak_spots),r.weak_spots==null?"":"/ 10",TIP.weak_spots+" (for the best search)"]]);
  h+=scoreBar(om);
- const mt=`<table class="small"><thead><tr><th>Search</th><th class="num">Score${info(TIP.opp_score)}</th><th class="num">Pop${info(TIP.demand)}</th><th class="num">Diff${info(TIP.difficulty)}</th><th class="num">Open${info(TIP.weak_spots)}</th><th class="num">Earn${info(TIP.attainable)}</th></tr></thead><tbody>`+
-  ms.map(x=>`<tr class="mem" data-k="${encodeURIComponent(x.keyword)}"><td title="${esc(x.reason||"")}">${esc(x.keyword)}${ownTag(x.keyword)}</td><td class="num"><span class="grade">${x.grade||""}</span>${n0(x.opp)}</td><td class="num">${n0(x.popularity)}</td><td class="num">${n0(x.difficulty)}</td><td class="num">${x.weak_spots??"–"}</td><td class="num">${x.band_usd!=null?"$"+n0(x.band_usd):"–"}</td></tr>`).join("")+"</tbody></table><p class='sub'>Click a search for its competitors and complaints. Put the top ones in your title, subtitle and keyword field.</p>";
+ h+=idxCards(r);
+ const mt=`<table class="small"><thead><tr><th>Search</th><th class="num">Score${info(TIP.opp_score)}</th><th class="num">Pop${info(TIP.demand)}</th><th class="num">Diff${info(TIP.difficulty)}</th><th class="num">Open${info(TIP.weak_spots)}</th></tr></thead><tbody>`+
+  ms.map(x=>`<tr class="mem" data-k="${encodeURIComponent(x.keyword)}"><td title="${esc(x.reason||"")}">${esc(x.keyword)}${ownTag(x.keyword)}</td><td class="num"><span class="grade">${x.grade||""}</span>${n0(x.opp)}</td><td class="num">${n0(x.popularity)}</td><td class="num">${n0(x.difficulty)}</td><td class="num">${x.weak_spots??"–"}</td></tr>`).join("")+"</tbody></table><p class='sub'>Click a search for its competitors and complaints. Put the top ones in your title, subtitle and keyword field.</p>";
  const ht=hm.length?(($("#excl").checked||om.hidden)?`<table class="small"><thead><tr><th>Search</th><th>Why hidden</th><th class="num">Pop</th><th class="num">Score</th></tr></thead><tbody>`+
   hm.map(x=>`<tr class="mem hid" data-k="${encodeURIComponent(x.keyword)}"><td title="${esc(x.why||"")}">${esc(x.keyword)}</td><td><span class="tag">${esc(x.kind||"hidden")}</span></td><td class="num">${n0(x.popularity)}</td><td class="num"><span class="grade">${x.grade||""}</span>${n0(x.opp)}</td></tr>`).join("")+"</tbody></table><p class='sub'>Brand names, games, non-latin and thin searches that belong to this product. They never count in the score.</p>"
   :`<p class="sub" style="font-size:13px">${hm.length} hidden ${hm.length===1?"search":"searches"} (brands, games…) belong here. Tick <b>Show hidden</b> to list them.</p>`):null;
@@ -549,9 +600,10 @@ async function detail(kw,force){const ent=force||($("#entity").disabled?"keyword
  else if(om.action==="No data")h+=`<p class="sub" style="margin:8px 0">The results page for this search has not been fetched yet, so there is nothing to judge. It is fetched when its popularity reaches 20 or a research run finds it.</p>`;
  h+=`<div class="aso"><b style="color:var(--text)">ASO</b>${info(TIP.aso_score)} <span class="gb g${(am.grade||"E").replace("?","Q").replace("-","Q")}">${am.grade||"–"}</span><span class="sc">${n0(r.aso_score)}</span><span class="pill ${actCls(am.action)}">${esc(am.action||"–")}</span><span>${esc(am.reason||"")}</span></div>`;
  h+=ownLine(kw);
- h+=tiles([["Searches / day",r.demand?n0(spd(r.demand)):"–","",TIP.demand],["Small apps earn",m.attainable?.attainable_usd!=null?"$"+n0(m.attainable.attainable_usd):"–","/mo",TIP.attainable],
+ h+=tiles([["Searches / day",r.demand?n0(spd(r.demand)):"–","",spdTip(r)],
   ["Difficulty",n0(r.difficulty),diffWord(r.difficulty),TIP.difficulty],["Open spots in top 10",r.weak_spots==null?"–":Math.round(r.weak_spots),r.weak_spots==null?"":"/ 10",TIP.weak_spots+(m.weak_spots?` Weakest top-10 app: ${n0(m.weak_spots.weakest_ratings)} ratings.`:"")]]);
  h+=scoreBar(om);
+ h+=idxCards(r);
  const apps=(d.apps||[]).slice(0,25).map(a=>`<tr><td class="num" style="color:var(--text-2)">${a.rank}</td><td title="${esc(a.subtitle||"")}">${esc(a.name)}</td><td class="num" style="${(a.rating_count||0)<100?'color:var(--blue-d);font-weight:600':''}">${(a.rating_count||0).toLocaleString()}</td><td class="num">${a.avg_rating?.toFixed(1)??""}</td></tr>`).join("");
  const play=(d.play||[]).slice(0,10).map(a=>`<tr><td class="num" style="color:var(--text-2)">${a.rank}</td><td>${esc(a.title||a.package)}</td><td class="num">${a.min_installs?a.min_installs.toLocaleString()+"+":"–"}</td><td>${a.offers_iap?"in-app":a.free===false?"paid":"free"}</td></tr>`).join("");
  const comp=(apps?`<table class="small"><thead><tr><th class="num">#</th><th>App Store</th><th class="num">Ratings${info("Total US ratings. Blue = under 100: a slot a new app can take.")}</th><th class="num">★</th></tr></thead><tbody>${apps}</tbody></table>`:"<p class='sub'>No App Store snapshot yet.</p>")+
@@ -560,11 +612,11 @@ async function detail(kw,force){const ent=force||($("#entity").disabled?"keyword
  const pains=(m.review_gap?.pain_points?.length?`<h3 style="margin-top:4px">App Store reviews${info("Recurring, fixable complaints in recent 1–3★ reviews of the p5–p20 apps (DeepSeek).")}</h3>`+pl(m.review_gap.pain_points,8):"")+
   (m.play_review_gap?.pain_points?.length?`<h3>Google Play reviews</h3>`+pl(m.play_review_gap.pain_points,6):"")+
   ((d.votes||[]).length?`<h3>Consumer panel</h3><ul class="small">${d.votes.map(v=>`<li><b>${esc(v.persona)}</b> ${v.score.toFixed(2)}: ${esc(v.rationale)}</li>`).join("")}</ul>`:"");
- const box=(label,val,k,extra="")=>`<div><span>${label}${info(TIP[k]||"")}</span><b>${val}</b>${extra?`<span>${extra}</span>`:""}</div>`;
- const more=`<div class="kgrid">`+box("Popularity",n0(r.demand),"demand")+box("Trend",r.trending==null?"–":(r.trending>0?"+":"")+r.trending.toFixed(1),"trending")+
-  box("P(app ≥ $5k)",pc(r.breadth),"breadth")+box("Top-5% share",pc(r.concentration),"concentration",m.concentration?.leader?`leader: ${esc(m.concentration.leader)}`:"")+
+ const box=(label,val,k,extra="")=>{const p=pctOf(k,r[k]);return`<div><span>${label}${info(explainNum(k,r[k],label,val))}</span><b>${p!=null?blk(p):""}${val}</b>${p!=null?`<span>higher than ${Math.round(p)}% of searches</span>`:""}${extra?`<span>${extra}</span>`:""}</div>`};
+ const more=`<div class="kgrid">`+box("Search popularity",n0(r.demand),"demand")+box("Trend",r.trending==null?"–":(r.trending>0?"+":"")+r.trending.toFixed(1),"trending")+
+  box("Top-5% share",pc(r.concentration),"concentration",m.concentration?.leader?`leader: ${esc(m.concentration.leader)}`:"")+
   box("Newcomers",pc(r.entrant_share),"entrant_share")+box("Indie",pc(r.indie_share),"indie_share")+box("Buildable",pc(r.buildability),"buildability",m.buildability?.reason?esc(m.buildability.reason):"")+box("Relevant results",pc(r.intent),"intent")+"</div>";
- const kv=Object.entries(m).filter(([k])=>!["composite","opp_score","aso_score"].includes(k)).map(([k,v])=>`<b>${esc(k)}</b><span>${v?esc(Object.entries(v).filter(([a])=>a!=="rationales").map(([a,b])=>`${a}=${typeof b==="object"?JSON.stringify(b):b}`).join(", ")):""}</span>`).join("");
+ const kv=Object.entries(m).filter(([k])=>!["composite","opp_score","aso_score","attainable","breadth","monetization","newcomer_winners"].includes(k)).map(([k,v])=>`<b>${esc(k)}</b><span>${v?esc(Object.entries(v).filter(([a])=>a!=="rationales").map(([a,b])=>`${a}=${typeof b==="object"?JSON.stringify(b):b}`).join(", ")):""}</span>`).join("");
  h+=tabs("keyword",[["Competitors",comp],["Complaints",pains||"<p class='sub' style='font-size:13px'>No complaint scan for this search yet.</p>"],["Numbers",more],["Raw",`<div class="kv">${kv}</div>`]]);
  h+=cmpBtn(kw);
  $("#detail").innerHTML=h;wireTabs();wireCmp();$("#detail").scrollTop=0;

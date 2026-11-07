@@ -104,3 +104,16 @@ def test_adult_intent_rule():
     assert not is_adult("sex offender map", 0.1)          # cue, but Jev says no
     assert not is_adult("brain games for adults", 0.2)
     assert not is_adult("anything", None)
+
+
+def test_index_recipe_percentiles_and_blocks():
+    from apptopics.metrics.indexing import IndexSpec, Ingredient, blocks, build, percentiles
+    p = percentiles({"a": 0, "b": 0, "c": 5, "d": 10})
+    assert p["a"] == p["b"] == 25.0 and p["d"] == 87.5          # ties share the mid rank
+    assert blocks(0.0) == 1 and blocks(19.9) == 1 and blocks(80) == 5 and blocks(100) == 5
+    spec = IndexSpec("t", "T", "?", [Ingredient("x", "X", 2), Ingredient("y", "Y", 1)])
+    raw = {f"k{i}": {"x": i, "y": (None if i % 2 else 10 - i)} for i in range(10)}
+    out = build(spec, raw)
+    assert out["k9"]["value"] > out["k0"]["value"]
+    assert out["k1"]["coverage"] == round(2 / 3, 2) and out["k1"]["parts"][1]["text"] == "not measured"
+    assert abs(sum(p["share"] for p in out["k1"]["parts"]) - 1) < 1e-9
